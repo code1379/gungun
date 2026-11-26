@@ -84,6 +84,8 @@ jobs:
           BUILD_ARCH: ${{ matrix.arch }}
           GH_TOKEN: ${{ github.token }}
       - run: pnpm build
+      - name: Actual macOS proxy chain and failure localization
+        run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
       - name: Build unsigned DMG for testing

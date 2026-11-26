@@ -98,6 +98,8 @@ jobs:
         env:
           { BUILD_ARCH: "${{ matrix.arch }}", GH_TOKEN: "${{ github.token }}" }
       - run: pnpm build && pnpm test:desktop
+      - name: Actual macOS proxy chain and failure localization
+        run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Package DMG with optional signing and notarization
         run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
         env:
@@ -148,6 +150,7 @@ jobs:
           test -s release-assets/test-report-macos-arm64.zip
           test -s release-assets/test-report-macos-x64.zip
           cp docs/使用说明.md docs/开发文档.md docs/测试报告.md release-assets/
+          node scripts/final-report.mjs
           cd release-assets
           sha256sum *.dmg fq-linux-* > SHA256SUMS
           gh release upload "$RELEASE_TAG" SHA256SUMS *.md --clobber
