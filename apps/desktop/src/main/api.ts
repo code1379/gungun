@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { randomUUID, randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { isIP } from "node:net";
@@ -337,6 +337,7 @@ export class API {
         });
         if (result.canceled || !result.filePath) return null;
         await writeFile(result.filePath, content, { mode: 0o600 });
+        await chmod(result.filePath, 0o600);
         return result.filePath;
       }
       case "test": {
@@ -523,6 +524,7 @@ export class API {
         await writeFile(result.filePath, JSON.stringify(data, null, 2), {
           mode: 0o600,
         });
+        await chmod(result.filePath, 0o600);
         return result.filePath;
       }
       case "importData": {

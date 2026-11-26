@@ -26,6 +26,7 @@ export class Store {
   private depth = 0;
   constructor(path: string) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(path), 0o700);
     this.db = new DatabaseSync(path);
     chmodSync(path, 0o600);
     this.db

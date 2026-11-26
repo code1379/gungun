@@ -71,6 +71,7 @@
     "dmg": {
       "title": "Gungun"
     },
-    "afterSign": "../../scripts/notarize.cjs"
+    "afterSign": "../../scripts/notarize.cjs",
+    "npmRebuild": false
   }
 }
