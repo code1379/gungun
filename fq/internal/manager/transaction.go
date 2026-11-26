@@ -3,6 +3,8 @@ package manager
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,7 +105,9 @@ func (m *Manager) Backup() (string, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return "", e
 	}
+	manifest := map[string]string{}
 	for _, name := range managedFiles {
+		manifest[name] = ""
 		b, e := os.ReadFile(filepath.Join(m.Root, name))
 		if errors.Is(e, os.ErrNotExist) {
 			continue
@@ -114,7 +118,12 @@ func (m *Manager) Backup() (string, error) {
 		if e = AtomicWrite(filepath.Join(dir, name), b, 0600); e != nil {
 			return "", e
 		}
+		digest := sha256.Sum256(b)
+		manifest[name] = hex.EncodeToString(digest[:])
 	}
+	data, e := json.Marshal(manifest)
+	if e != nil { return "", e }
+	if e = AtomicWrite(filepath.Join(dir, "manifest.json"), data, 0600); e != nil { return "", e }
 	return id, nil
 }
 func (m *Manager) RestoreFiles(id string) error {
@@ -126,18 +135,31 @@ func (m *Manager) RestoreFiles(id string) error {
 	if e != nil || !info.IsDir() {
 		return errors.New("backup not found")
 	}
+	data, e := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if e != nil { return fmt.Errorf("incomplete backup: %w", e) }
+	manifest := map[string]string{}
+	if e = json.Unmarshal(data, &manifest); e != nil || len(manifest) != len(managedFiles) {
+		return errors.New("invalid backup manifest")
+	}
+	verified := map[string][]byte{}
 	for _, name := range managedFiles {
-		b, e := os.ReadFile(filepath.Join(dir, name))
-		if errors.Is(e, os.ErrNotExist) {
+		expected, exists := manifest[name]
+		if !exists { return errors.New("incomplete backup manifest") }
+		if expected == "" { continue }
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil { return fmt.Errorf("backup file %s: %w", name, err) }
+		digest := sha256.Sum256(b)
+		if hex.EncodeToString(digest[:]) != expected { return fmt.Errorf("backup checksum mismatch: %s", name) }
+		verified[name] = b
+	}
+	for _, name := range managedFiles {
+		if manifest[name] == "" {
 			if e = os.Remove(filepath.Join(m.Root, name)); e != nil && !errors.Is(e, os.ErrNotExist) {
 				return e
 			}
 			continue
 		}
-		if e != nil {
-			return e
-		}
-		if e = AtomicWrite(filepath.Join(m.Root, name), b, 0600); e != nil {
+		if e = AtomicWrite(filepath.Join(m.Root, name), verified[name], 0600); e != nil {
 			return e
 		}
 	}

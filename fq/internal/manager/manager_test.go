@@ -23,6 +23,20 @@ import (
 	"time"
 )
 
+func TestCorruptedBackupNeverChangesLiveConfiguration(t *testing.T) {
+  m := fakeManager(t)
+  if _, err := m.Apply(fixture()); err != nil { t.Fatal(err) }
+  before, err := os.ReadFile(filepath.Join(m.Root, "state.json"))
+  if err != nil { t.Fatal(err) }
+  id, err := m.Backup()
+  if err != nil { t.Fatal(err) }
+  if err = os.WriteFile(filepath.Join(m.Root, "backups", id, "state.json"), []byte("corrupt"), 0600); err != nil { t.Fatal(err) }
+  if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "checksum") { t.Fatalf("expected checksum rejection: %v", err) }
+  after, _ := os.ReadFile(filepath.Join(m.Root, "state.json"))
+  if string(after) != string(before) { t.Fatal("corrupt backup changed live state") }
+  if err = os.Remove(filepath.Join(m.Root, "backups", id, "manifest.json")); err != nil { t.Fatal(err) }
+  if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "incomplete") { t.Fatalf("expected incomplete backup rejection: %v", err) }
+}
 func fixture() State {
 	return State{SchemaVersion: 1, HostID: "test-host", Kind: "public", PublicAddress: "127.0.0.1", Namespace: "a7k2p", ZoneName: "example.com", Services: []Service{}, Websites: []Website{}}
 }

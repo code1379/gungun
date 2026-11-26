@@ -1054,8 +1054,8 @@ export default function Nodes() {
                     {r.error && <p className="error-text">{r.error}</p>}
                     {r.hops?.map((h, i) => (
                       <div key={h.nodeId} className="hop-result">
-                        <Badge tone={h.ok ? "good" : "bad"}>
-                          第 {i + 1} 跳 · {h.ok ? "通过" : "失败"}
+                        <Badge tone={h.state === "blocked" ? undefined : h.ok ? "good" : "bad"}>
+                          第 {i + 1} 跳 · {h.state === "blocked" ? "未测试" : h.ok ? "通过" : "失败"}
                         </Badge>
                         <span>
                           {data.nodes.find((n) => n.id === h.nodeId)?.name}

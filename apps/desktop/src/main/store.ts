@@ -104,6 +104,8 @@ export class Store {
   saveTag(input: unknown) {
     const t = tagSchema.parse(input);
     if (t.id === "all" || t.id === "chains") throw new Error("保留 Tag");
+    if (t.kind === "aggregate" && this.all<ProxyNode>("nodes").some((node) => node.tagId === t.id))
+      throw new Error("该分组仍有原始节点，请先移动节点，再改为动态聚合");
     const list = [...this.all<Tag>("tags").filter((x) => x.id !== t.id), t];
     resolveTag(t.id, [], list);
     return this.putRaw("tags", t);

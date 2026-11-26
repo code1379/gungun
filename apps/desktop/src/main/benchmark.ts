@@ -214,6 +214,7 @@ export class Benchmark {
             result.hops.push({
               nodeId: subset[i],
               ok: true,
+              state: "success",
               latencyMs: measurement.latencyMs,
               error: null,
             });
@@ -221,6 +222,7 @@ export class Benchmark {
             result.hops.push({
               nodeId: subset[i],
               ok: false,
+              state: "failed",
               latencyMs: null,
               error: String(e),
             });
@@ -238,6 +240,12 @@ export class Benchmark {
         );
     } catch (e) {
       result.error = String(e);
+      if (isChain) {
+        result.hops ??= [];
+        for (const nodeId of subject.nodeIds.slice(result.hops.length)) {
+          result.hops.push({ nodeId, ok: false, state: "blocked", latencyMs: null, error: "未测试：前一跳未建立" });
+        }
+      }
     }
     return result;
   }

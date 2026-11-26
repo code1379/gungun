@@ -46,7 +46,7 @@ export class Orchestrator {
     await step("安装 fq 与服务单元", async () => {
       await this.ssh.run(
         vps,
-        `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 ${shellQuote(remote)} /usr/local/bin/fq && rm -f ${shellQuote(remote)}`,
+        `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 ${shellQuote(remote)} /usr/local/bin/fq.next && ${vps.username === "root" ? "" : "sudo -n "}mv -f /usr/local/bin/fq.next /usr/local/bin/fq && rm -f ${shellQuote(remote)}`,
       );
       return this.ssh.fq(vps, "install");
     });

@@ -32,6 +32,14 @@ afterEach(() => {
     rmSync(path, { recursive: true, force: true });
 });
 describe("SQLite 数据一致性", () => {
+  it("已有原始节点的分组不能直接转换为动态聚合", () => {
+    const s = store();
+    s.saveTag({ id: "manual", name: "manual", kind: "manual" });
+    s.saveNode({ id: "n", name: "n", protocol: "snell", address: "localhost", port: 12345, tagId: "manual" });
+    expect(() => s.saveTag({ id: "manual", name: "aggregate", kind: "aggregate", tagIds: [] })).toThrow("原始节点");
+    expect(s.all<{kind: string}>("tags")[0].kind).toBe("manual");
+    expect(s.all("nodes")).toHaveLength(1);
+  });
   it("持久化 VPS 与独立 Tag，并限制文件权限", () => {
     const s = store();
     const v = vps();

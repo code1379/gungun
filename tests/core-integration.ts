@@ -30,6 +30,7 @@ const ports = [await port(), await port()];
 const secret = "integration-snell-secret";
 const children: ReturnType<typeof spawn>[] = [];
 let processError: Error | undefined;
+const serverLogs = ["", ""];
 for (let i = 0; i < ports.length; i++) {
   const current = join(dir, String(i));
   await (await import("node:fs/promises")).mkdir(current);
@@ -57,10 +58,12 @@ for (let i = 0; i < ports.length; i++) {
     ["-d", current, "-f", join(current, "config.json")],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
-  if (process.env.GUNGUN_CORE_DEBUG) {
-    child.stdout?.on("data", (b) => console.log(`SERVER ${i}: ${b}`));
-    child.stderr?.on("data", (b) => console.log(`SERVER ${i}: ${b}`));
-  }
+  const collect = (b: Buffer) => {
+    serverLogs[i] = (serverLogs[i] + b.toString()).slice(-12000);
+    if (process.env.GUNGUN_CORE_DEBUG) console.log(`SERVER ${i}: ${b}`);
+  };
+  child.stdout?.on("data", collect);
+  child.stderr?.on("data", collect);
   child.on("error", (e) => {
     processError = e;
   });
@@ -77,19 +80,21 @@ const server = createServer((req, res) => {
 });
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 try {
-  for (let i = 0; i < 100; i++) {
-    if (processError) throw processError;
-    const ready = await new Promise<boolean>((r) => {
-      const c = net.connect(ports[0], "127.0.0.1");
-      c.on("connect", () => {
-        c.destroy();
-        r(true);
+  await Promise.all(ports.map(async (port, index) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (processError) throw processError;
+      if (children[index].exitCode !== null)
+        throw new Error(`Snell fixture ${index + 1} exited: ${serverLogs[index]}`);
+      const ready = await new Promise<boolean>((resolve) => {
+        const socket = net.connect(port, "127.0.0.1");
+        socket.once("connect", () => { socket.destroy(); resolve(true); });
+        socket.once("error", () => resolve(false));
       });
-      c.on("error", () => r(false));
-    });
-    if (ready) break;
-    await new Promise((r) => setTimeout(r, 50));
-  }
+      if (ready) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`Snell fixture ${index + 1} did not become ready: ${serverLogs[index]}`);
+  }));
   const nodes = ports.map((p, i) =>
     nodeSchema.parse({
       id: randomUUID(),
@@ -135,6 +140,15 @@ try {
   console.log(
     "PASS: broken second-hop credentials produce per-hop failure, without marking first hop failed",
   );
+  nodes[1].password = secret;
+  nodes[0].password = "wrong-first-hop-password";
+  const firstBroken = await benchmark.test(chain, nodes, null, settings, false);
+  assert.equal(firstBroken.hops?.[0].state, "failed");
+  assert.equal(firstBroken.hops?.[1].state, "blocked");
+  console.log("PASS: failed first hop leaves later hops explicitly untested");
+} catch (error) {
+  console.error(serverLogs.map((log, i) => `SERVER ${i + 1}: ${log}`).join("\n"));
+  throw error;
 } finally {
   for (const child of children) {
     child.kill("SIGTERM");

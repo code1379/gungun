@@ -40,7 +40,7 @@ it("同 VPS 串行，不同 VPS 并行，并持久化实际任务输出", async 
   const events: string[] = [];
   const center = new TaskCenter(store, () => {}, 4);
   try {
-    center.submit("a1", "a", async (step) =>
+    const firstTask = center.submit("a1", "a", async (step) =>
       step("wait", async () => {
         events.push("a1");
         await first.promise;
@@ -57,6 +57,8 @@ it("同 VPS 串行，不同 VPS 并行，并持久化实际任务输出", async 
     });
     await other.promise;
     expect(events).toEqual(["a1", "b1"]);
+    center.report(firstTask, 5, 10);
+    expect(store.get<Task>("tasks", firstTask).progress).toBeGreaterThan(0);
     first.resolve();
     await secondStarted.promise;
     await new Promise((r) => setTimeout(r, 10));

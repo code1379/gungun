@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,7 +25,17 @@ type BenchRequest struct {
 	Speed         bool           `json:"speed"`
 }
 
-func (m *Manager) Benchmark(r BenchRequest) (M, error) {
+type limitedLog struct { mu sync.Mutex; data string }
+func (l *limitedLog) Write(b []byte) (int, error) {
+  l.mu.Lock()
+  defer l.mu.Unlock()
+  l.data += string(b)
+  if len(l.data) > 12000 { l.data = l.data[len(l.data)-12000:] }
+  return len(b), nil
+}
+func (l *limitedLog) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.data }
+
+func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if r.TimeoutMS < 3000 || r.TimeoutMS > 120000 || r.DownloadBytes < 100000 || r.DownloadBytes > 100000000 {
 		return nil, fmt.Errorf("invalid benchmark limits")
 	}
@@ -60,10 +71,19 @@ func (m *Manager) Benchmark(r BenchRequest) (M, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.TimeoutMS*2+10000)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(m.Bin, "mihomo"), "-d", dir, "-f", path)
+	coreLog := &limitedLog{}
+	cmd.Stdout = coreLog
+	cmd.Stderr = coreLog
 	if e = cmd.Start(); e != nil {
 		return nil, e
 	}
-	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	defer func() {
+    _ = cmd.Process.Kill()
+    _ = cmd.Wait()
+    if runErr != nil && coreLog.String() != "" {
+      runErr = fmt.Errorf("%w; core log: %s", runErr, coreLog.String())
+    }
+  }()
 	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
 	ready := false
 	for i := 0; i < 100; i++ {

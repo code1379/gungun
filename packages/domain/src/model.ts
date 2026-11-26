@@ -174,6 +174,7 @@ export interface TestResult {
   hops?: {
     nodeId: string;
     ok: boolean;
+    state?: "success" | "failed" | "blocked";
     latencyMs: number | null;
     error: string | null;
   }[];

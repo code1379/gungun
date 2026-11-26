@@ -21,7 +21,6 @@ import {
   type Chain,
   type ProxyNode,
   type Tag,
-  type Task,
   type VPS,
 } from "@gungun/domain";
 import type { Store } from "./store";
@@ -286,7 +285,8 @@ export class API {
             if (!r.ok) throw new Error(`订阅 HTTP ${r.status}`);
             if (Number(r.headers.get("content-length")) > 8 * 1024 * 1024)
               throw new Error("订阅超过 8 MB");
-            const reader = r.body!.getReader();
+            if (!r.body) throw new Error("订阅响应为空");
+            const reader = r.body.getReader();
             const chunks: Uint8Array[] = [];
             let size = 0;
             try {
@@ -375,33 +375,27 @@ export class API {
         );
         if (!jobs.length)
           throw new Error("没有可测试项，VPS 不能测试自己部署的节点");
-        return this.tasks.submit(
+        let taskId = "", completed = 0, failed = 0;
+        taskId = this.tasks.submit(
           q.speed ? "多主机延迟和速度测试" : "真连接延迟测试",
           null,
-          (step) =>
-            step(
-              `测试 ${jobs.length} 项，最大并发 ${s.settings().concurrency}`,
-              () =>
-                pooled(
-                  jobs,
-                  s.settings().concurrency,
-                  async ({ subject, source }) => {
-                    s.result(
-                      await this.testGate.run(() =>
-                        this.benchmark.test(
-                          subject,
-                          nodes,
-                          source,
-                          s.settings(),
-                          q.speed,
-                        ),
-                      ),
-                    );
-                    this.notify();
-                  },
-                ),
-            ),
+          (step) => step(
+            `测试 ${jobs.length} 项，最大并发 ${s.settings().concurrency}`,
+            async () => {
+              await pooled(jobs, s.settings().concurrency, async ({ subject, source }) => {
+                const result = await this.testGate.run(() =>
+                  this.benchmark.test(subject, nodes, source, s.settings(), q.speed),
+                );
+                s.result(result);
+                if (result.error) failed++;
+                completed++;
+                this.tasks.report(taskId, completed, jobs.length);
+              });
+              return { tested: completed, passed: completed - failed, failed };
+            },
+          ),
         );
+        return taskId;
       }
       case "candidateIPs": {
         const r = await fetch("https://www.cloudflare.com/ips-v4", {
@@ -481,9 +475,7 @@ export class API {
                     error: String(e),
                   });
                 }
-                const task = s.get<Task>("tasks", taskId);
-                s.putRaw("tasks", { ...task, output: results });
-                this.notify();
+                this.tasks.report(taskId, results.length, q.addresses.length, results);
               },
             );
           }),

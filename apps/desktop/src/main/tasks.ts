@@ -73,11 +73,22 @@ export class TaskCenter {
     }
     this.save(task);
   }
+  report(id: string, completed: number, total: number, output?: unknown) {
+    const task = this.store.get<Task>("tasks", id);
+    this.store.putRaw("tasks", {
+      ...task,
+      progress: Math.max(task.progress, Math.min(95, Math.round(completed / Math.max(1, total) * 95))),
+      output: output ?? task.output,
+      updatedAt: new Date().toISOString(),
+    });
+    this.notify();
+  }
   private save(task: Task) {
     task.updatedAt = new Date().toISOString();
     const latest = this.store.get<Task>("tasks", task.id);
     this.store.putRaw("tasks", {
       ...task,
+      progress: Math.max(task.progress, latest.progress),
       output: task.output ?? latest.output,
     });
     this.notify();

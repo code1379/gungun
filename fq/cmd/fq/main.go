@@ -56,11 +56,11 @@ func run(args []string) error {
 		}
 		result, e = m.Benchmark(input)
 	} else {
-		unlock, err := m.Lock()
-		if err != nil {
-			return err
+		if args[0] != "status" && args[0] != "log" {
+			unlock, err := m.Lock()
+			if err != nil { return err }
+			defer unlock()
 		}
-		defer unlock()
 		switch args[0] {
 		case "config":
 			result, e = m.PublicState()
@@ -122,7 +122,9 @@ func run(args []string) error {
 				ids := []string{}
 				for _, entry := range entries {
 					if entry.IsDir() {
-						ids = append(ids, entry.Name())
+						if _, err := os.Stat(filepath.Join(m.Root, "backups", entry.Name(), "manifest.json")); err == nil {
+							ids = append(ids, entry.Name())
+						}
 					}
 				}
 				if os.IsNotExist(e) {
