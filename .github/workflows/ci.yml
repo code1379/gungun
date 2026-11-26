@@ -56,7 +56,6 @@ jobs:
           path: test-results/
           if-no-files-found: warn
   macos:
-    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -87,8 +86,6 @@ jobs:
       - run: pnpm build
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
-        env:
-          GUNGUN_SCREENSHOT_LOG: "1"
       - name: Build unsigned DMG for testing
         run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
         env:
