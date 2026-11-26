@@ -8,11 +8,20 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "baseUrl": ".",
     "paths": {
-      "@gungun/domain": ["packages/domain/src/index.ts"],
-      "ssh2": ["apps/desktop/node_modules/@types/ssh2/index.d.ts"]
+      "@gungun/domain": [
+        "packages/domain/src/index.ts"
+      ],
+      "ssh2": [
+        "apps/desktop/node_modules/@types/ssh2/index.d.ts"
+      ],
+      "@/*": [
+        "apps/desktop/src/renderer/src/*"
+      ]
     }
   },
   "include": [

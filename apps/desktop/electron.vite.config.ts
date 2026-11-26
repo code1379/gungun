@@ -16,5 +16,5 @@ export default defineConfig({
       rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" } },
     },
   },
-  renderer: { resolve: { alias }, plugins: [react(), tailwindcss()] },
+  renderer: { resolve: { alias: { ...alias, "@": resolve("src/renderer/src") } }, plugins: [react(), tailwindcss()] },
 });

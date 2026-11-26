@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -278,7 +279,20 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer func() { cancel(); _ = server.Wait() }()
-	time.Sleep(500 * time.Millisecond)
+	waitForPort := func(port int) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)
+			if err == nil { conn.Close(); return }
+			time.Sleep(25 * time.Millisecond)
+		}
+		logs, _ := os.ReadFile(filepath.Join(root, "server.log"))
+		t.Fatalf("core listener %d not ready: %s", port, logs)
+	}
+	for _, item := range s.Services {
+		if item.Protocol != "hysteria2" && item.Protocol != "tuic" { waitForPort(item.Port) }
+	}
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/download" {
 			_, _ = w.Write(make([]byte, 1000000))
@@ -340,6 +354,20 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 			}
 		})
 	}
+	for _, entry := range proxies {
+		for _, final := range proxies {
+			if final["name"] == "hysteria2" || final["name"] == "tuic" { continue }
+			t.Run("chain-matrix/"+entry["name"].(string)+"-to-"+final["name"].(string), func(t *testing.T) {
+				exit := M{}
+				for key, value := range final { exit[key] = value }
+				exit["name"] = "matrix-exit"
+				exit["dialer-proxy"] = entry["name"]
+				result, err := request(M{"proxies": []any{entry, exit}, "mode": "rule", "rules": []string{"MATCH,matrix-exit"}, "log-level": "warning"})
+				if err != nil { t.Fatalf("actual protocol-chain compatibility: %v", err) }
+				if result["speedMBps"] == nil { t.Fatal("chain matrix did not download real data") }
+			})
+		}
+	}
 	second := fixture()
 	second.Services = []Service{service("snell", 0)}
 	if e = second.Normalize(); e != nil {
@@ -350,11 +378,13 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 	path2 := filepath.Join(root, "second.json")
 	_ = os.WriteFile(path2, b, 0600)
 	server2 := exec.CommandContext(ctx, sing, "run", "-c", path2)
+	server2.Stdout = log
+	server2.Stderr = log
 	if e = server2.Start(); e != nil {
 		t.Fatal(e)
 	}
 	defer func() { _ = server2.Process.Kill(); _ = server2.Wait() }()
-	time.Sleep(200 * time.Millisecond)
+	waitForPort(v.Port)
 	var first M
 	for _, p := range proxies {
 		if p["name"] == "snell" {
@@ -398,5 +428,22 @@ func TestTunnelExplicitDisable(t *testing.T) {
 	}
 	if _, e = os.Stat(filepath.Join(m.Root, "tunnel.enabled")); !os.IsNotExist(e) {
 		t.Fatal("disabled tunnel still enabled at boot")
+	}
+}
+
+func TestWebsiteListenerTransportCompatibility(t *testing.T) {
+	for _, item := range []struct {
+		first, second string
+		valid bool
+	}{{"direct", "cdn", true}, {"argo", "argo", true}, {"direct", "argo", false}, {"argo", "cdn", false}} {
+		t.Run(item.first+"-"+item.second, func(t *testing.T) {
+			s := fixture()
+			s.Websites = []Website{
+				{ID: "first", Domain: "one.example.com", Target: "127.0.0.1", TargetPort: 3000, Access: item.first, Port: 38443, PublicPort: 38443, EdgePort: 443},
+				{ID: "second", Domain: "two.example.com", Target: "127.0.0.1", TargetPort: 8080, Access: item.second, Port: 38443, PublicPort: 38443, EdgePort: 443},
+			}
+			err := s.Normalize()
+			if (err == nil) != item.valid { t.Fatalf("transport validation: %v", err) }
+		})
 	}
 }

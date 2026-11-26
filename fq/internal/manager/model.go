@@ -186,6 +186,7 @@ func (s *State) Normalize() error {
 		}
 	}
 	domains := map[string]bool{}
+	websiteTransports := map[int]bool{}
 	for _, w := range s.Websites {
 		if !validID.MatchString(w.ID) || ids[w.ID] {
 			return errors.New("invalid website id")
@@ -204,6 +205,11 @@ func (s *State) Normalize() error {
 		if w.Access != "direct" && w.Access != "cdn" && w.Access != "argo" {
 			return errors.New("invalid website access")
 		}
+		argo := w.Access == "argo"
+		if previous, exists := websiteTransports[w.Port]; exists && previous != argo {
+			return errors.New("Argo HTTP and TLS websites require different internal ports")
+		}
+		websiteTransports[w.Port] = argo
 		if w.Access == "cdn" && !httpsPort(w.EdgePort) {
 			return errors.New("unsupported website Edge port")
 		}

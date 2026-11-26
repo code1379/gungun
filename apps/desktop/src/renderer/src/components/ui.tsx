@@ -3,41 +3,13 @@ import {
   useId,
   isValidElement,
   cloneElement,
-  type ButtonHTMLAttributes,
   type ReactNode,
 } from "react";
-import { Button as BaseButton } from "@base-ui/react/button";
 import { Dialog } from "@base-ui/react/dialog";
-import { cva } from "class-variance-authority";
-import { clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { X, AlertTriangle, Check } from "lucide-react";
 import { errorText, useApp } from "../api";
-const button = cva("button", {
-  variants: {
-    variant: {
-      default: "button-primary",
-      secondary: "button-secondary",
-      ghost: "button-ghost",
-      danger: "button-danger",
-    },
-  },
-  defaultVariants: { variant: "secondary" },
-});
-export function Button({
-  variant,
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "secondary" | "ghost" | "danger";
-}) {
-  return (
-    <BaseButton
-      className={twMerge(clsx(button({ variant }), className))}
-      {...props}
-    />
-  );
-}
+import { Button } from "./ui/button";
+export { Button };
 export function Modal({
   open,
   onClose,
