@@ -204,7 +204,9 @@ func (m *Manager) Apply(s State) (M, error) {
 		s.RealityPublicKey = old.RealityPublicKey
 		s.RealityShortID = old.RealityShortID
 	}
-	if s.TunnelToken == "" {
+	if s.DisableTunnel {
+		s.TunnelToken = ""
+	} else if s.TunnelToken == "" {
 		s.TunnelToken = old.TunnelToken
 	}
 	s.Certificate = old.Certificate

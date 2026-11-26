@@ -4,6 +4,7 @@ import {
   serviceSchema,
   websiteSchema,
   type ProxyNode,
+  type Chain,
   type RemoteState,
   type Service,
   type VPS,
@@ -67,9 +68,20 @@ export class Orchestrator {
       throw new Error(
         "fq 导出版本或 VPS ID 不匹配，请先通过部署中心初始化此主机",
       );
+    const incoming = new Set(data.nodes.map((n) => n.id));
+    const removedIds = new Set(
+      this.store
+        .all<ProxyNode>("nodes")
+        .filter((n) => n.vpsId === vps.id && !incoming.has(n.id))
+        .map((n) => n.id),
+    );
+    const removedChains = this.store
+      .all<Chain>("chains")
+      .filter((c) => c.nodeIds.some((id) => removedIds.has(id)))
+      .map((c) => c.name);
     const count = this.store.sync(vps.id, data.nodes);
     this.notify();
-    return count;
+    return { count, removedChains };
   }
   async deploy(
     vps: VPS,
@@ -97,6 +109,7 @@ export class Orchestrator {
         ...state,
         schemaVersion: 1,
         hostId: vps.id,
+        hostName: vps.name,
         kind: vps.kind,
         publicAddress: vps.publicAddress,
         namespace: vps.namespace,
@@ -184,6 +197,7 @@ export class Orchestrator {
           const oldVps = vps;
           vps = { ...vps, tunnelId: tunnel.id };
           state.tunnelToken = tunnel.token;
+          state.disableTunnel = false;
           const ingress = [
             ...state.services
               .filter((s) => s.access === "argo")
@@ -242,6 +256,9 @@ export class Orchestrator {
             );
         }
       }
+      if (item.access !== "argo" && vps.tunnelId) {
+        await this.updateTunnel(vps, state, step, undo);
+      }
       await step("预检查、应用、验证与失败回滚", () =>
         this.ssh.fq(vps, "apply", state),
       );
@@ -250,6 +267,65 @@ export class Orchestrator {
     } catch (e) {
       return compensate(undo, e);
     }
+  }
+  private async updateTunnel(
+    vps: VPS,
+    state: RemoteState,
+    step: Step,
+    undo: (() => Promise<void>)[],
+  ) {
+    const ingress = [
+      ...state.services
+        .filter((s) => s.access === "argo")
+        .map((s) => ({
+          hostname: s.domain,
+          service: `http://127.0.0.1:${s.port}`,
+        })),
+      ...state.websites
+        .filter((w) => w.access === "argo")
+        .map((w) => ({
+          hostname: w.domain,
+          service: `http://127.0.0.1:${w.port}`,
+        })),
+    ];
+    const cf = new Cloudflare(this.store.settings());
+    undo.push(
+      await step("更新 Tunnel 路由", () =>
+        cf.tunnelConfig(vps.accountId, vps.tunnelId, ingress),
+      ),
+    );
+    state.disableTunnel = ingress.length === 0;
+  }
+  async remove(vps: VPS, kind: "service" | "website", id: string, step: Step) {
+    const action = async () => {
+      const state = await step("读取真实配置", () => this.ssh.state(vps));
+      const backup = await step("备份配置", () =>
+        this.ssh.fq<{ backupId: string }>(vps, "backup"),
+      );
+      const undo: (() => Promise<void>)[] = [
+        async () => {
+          await this.ssh.run(
+            vps,
+            `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq restore ${shellQuote(backup.backupId)} --json`,
+          );
+        },
+      ];
+      try {
+        if (kind === "service")
+          state.services = state.services.filter((s) => s.id !== id);
+        else state.websites = state.websites.filter((w) => w.id !== id);
+        if (vps.tunnelId) await this.updateTunnel(vps, state, step, undo);
+        await step("应用、验证与失败回滚", () =>
+          this.ssh.fq(vps, "apply", state),
+        );
+        return await this.sync(vps, step);
+      } catch (e) {
+        return compensate(undo, e);
+      }
+    };
+    const run = this.cfLane.then(action, action);
+    this.cfLane = run.catch(() => {});
+    return run;
   }
   private async allocatePort(state: RemoteState, vps: VPS) {
     const used = new Set(state.services.map((s) => s.port));

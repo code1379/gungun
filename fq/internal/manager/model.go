@@ -45,12 +45,14 @@ type Certificate struct {
 type State struct {
 	SchemaVersion     int          `json:"schemaVersion"`
 	HostID            string       `json:"hostId"`
+	HostName          string       `json:"hostName,omitempty"`
 	Kind              string       `json:"kind"`
 	PublicAddress     string       `json:"publicAddress"`
 	Namespace         string       `json:"namespace"`
 	ZoneName          string       `json:"zoneName"`
 	Services          []Service    `json:"services"`
 	Websites          []Website    `json:"websites"`
+	DisableTunnel     bool         `json:"disableTunnel,omitempty"`
 	TunnelToken       string       `json:"tunnelToken,omitempty"`
 	RealityPrivateKey string       `json:"realityPrivateKey,omitempty"`
 	RealityPublicKey  string       `json:"realityPublicKey,omitempty"`

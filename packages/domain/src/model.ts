@@ -94,7 +94,7 @@ export const serviceSchema = z
     edgePort: portSchema.default(443),
     access: z.enum(["direct", "cdn", "argo"]),
     egress: z.enum(["DIRECT", "WARP"]).default("DIRECT"),
-    domain: z.string().default(""),
+    domain: z.union([z.literal(""), domainSchema]).default(""),
     password: z.string().default(""),
     uuid: z.string().default(""),
     path: z
@@ -137,6 +137,7 @@ export type Website = z.infer<typeof websiteSchema>;
 export interface RemoteState {
   schemaVersion: 1;
   hostId: string;
+  hostName?: string;
   kind: "public" | "nat";
   publicAddress: string;
   namespace: string;
@@ -144,6 +145,7 @@ export interface RemoteState {
   services: Service[];
   websites: Website[];
   tunnelToken?: string;
+  disableTunnel?: boolean;
   realityPrivateKey?: string;
   realityPublicKey?: string;
   realityShortId?: string;

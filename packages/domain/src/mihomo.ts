@@ -98,9 +98,9 @@ export function mihomoConfig(nodes: ProxyNode[], chain?: Chain, port = 10808) {
 }
 export function exportMihomo(nodes: ProxyNode[], chains: Chain[] = []) {
   if (!nodes.length && !chains.length) throw new Error("没有可导出的节点");
-  const proxies: Record<string, unknown>[] = nodes.map((n) =>
-    toMihomo(n, `${n.name} [${n.id}]`),
-  );
+  const proxies: Record<string, unknown>[] = chains.length
+    ? []
+    : nodes.map((n) => toMihomo(n, `${n.name} [${n.id}]`));
   const names = proxies.map((p) => p.name);
   for (const c of chains) {
     const parts = chainProxies(c, nodes);

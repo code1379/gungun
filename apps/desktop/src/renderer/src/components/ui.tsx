@@ -1,4 +1,11 @@
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import {
+  useState,
+  useId,
+  isValidElement,
+  cloneElement,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 import { Button as BaseButton } from "@base-ui/react/button";
 import { Dialog } from "@base-ui/react/dialog";
 import { cva } from "class-variance-authority";
@@ -82,12 +89,22 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  const id = useId();
+  const direct =
+    isValidElement<{ id?: string; "aria-describedby"?: string }>(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type);
   return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small>{hint}</small>}
-    </label>
+    <div className="field">
+      {direct ? <label htmlFor={id}>{label}</label> : <span>{label}</span>}
+      {direct
+        ? cloneElement(children, {
+            id,
+            "aria-describedby": hint ? `${id}-hint` : undefined,
+          })
+        : children}
+      {hint && <small id={`${id}-hint`}>{hint}</small>}
+    </div>
   );
 }
 export function Empty({

@@ -82,9 +82,23 @@ if (!app.requestSingleInstanceLock()) {
       const role = windows.get(event.sender.id)!;
       if (
         role.type !== "main" &&
-        !["snapshot", "remoteRead"].includes(operation)
+        !["snapshot", "remoteRead", "trustHost"].includes(operation)
       )
         throw new Error("该工作窗口不允许此操作");
+      if (role.type !== "main" && operation === "trustHost") {
+        const q = z.object({ address: z.string() }).passthrough().parse(input);
+        let current =
+          role.type === "task"
+            ? store.get<{ vpsId: string | null }>("tasks", role.id).vpsId
+            : role.id;
+        const allowed = new Set<string>();
+        while (current) {
+          const v = store.get<VPS>("vps", current);
+          allowed.add(`${v.address}:${v.sshPort}`);
+          current = v.jumpId;
+        }
+        if (!allowed.has(q.address)) throw new Error("工作窗口主机不匹配");
+      }
       if (
         role.type === "logs" &&
         operation === "remoteRead" &&
@@ -121,15 +135,22 @@ if (!app.requestSingleInstanceLock()) {
             connection.close();
           },
         });
-        stream.on("data", (b: Buffer) =>
-          event.sender.send("terminal:data", b.toString()),
+        stream.on(
+          "data",
+          (b: Buffer) =>
+            !event.sender.isDestroyed() &&
+            event.sender.send("terminal:data", b.toString()),
         );
-        stream.stderr.on("data", (b: Buffer) =>
-          event.sender.send("terminal:data", b.toString()),
+        stream.stderr.on(
+          "data",
+          (b: Buffer) =>
+            !event.sender.isDestroyed() &&
+            event.sender.send("terminal:data", b.toString()),
         );
         stream.on("close", () => {
           connection.close();
-          event.sender.send("terminal:data", "\r\n[SSH 连接已关闭]\r\n");
+          if (!event.sender.isDestroyed())
+            event.sender.send("terminal:data", "\r\n[SSH 连接已关闭]\r\n");
         });
         return true;
       } catch (e) {

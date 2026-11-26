@@ -352,3 +352,37 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		t.Fatalf("real two-hop dialer-proxy: %v", e)
 	}
 }
+
+func TestTunnelExplicitDisable(t *testing.T) {
+	m := fakeManager(t)
+	s := fixture()
+	s.TunnelToken = "scoped-test-token"
+	if _, e := m.Apply(s); e != nil {
+		t.Fatal(e)
+	}
+	redacted, e := m.PublicState()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if redacted.TunnelToken != "" {
+		t.Fatal("token leaked")
+	}
+	if _, e = m.Apply(redacted); e != nil {
+		t.Fatal(e)
+	}
+	stored, _ := m.Load()
+	if stored.TunnelToken == "" {
+		t.Fatal("redacted state erased token")
+	}
+	redacted.DisableTunnel = true
+	if _, e = m.Apply(redacted); e != nil {
+		t.Fatal(e)
+	}
+	stored, _ = m.Load()
+	if stored.TunnelToken != "" {
+		t.Fatal("explicit disable failed")
+	}
+	if _, e = os.Stat(filepath.Join(m.Root, "tunnel.enabled")); !os.IsNotExist(e) {
+		t.Fatal("disabled tunnel still enabled at boot")
+	}
+}

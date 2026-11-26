@@ -47,6 +47,18 @@ describe("链式代理模型与 Mihomo 配置", () => {
     const yaml = parse(exportMihomo(nodes, [c]));
     expect(yaml["proxy-groups"][0].proxies).toContain(proxies[2].name);
   });
+  it("链路 Tag 导出不包含无关节点凭据", () => {
+    const nodes = [
+      node(),
+      node(),
+      node("anytls", { password: "unrelated-secret" }),
+    ];
+    const output = exportMihomo(nodes, [
+      chain(nodes.slice(0, 2).map((n) => n.id)),
+    ]);
+    expect(output).not.toContain("unrelated-secret");
+    expect(parse(output).proxies).toHaveLength(2);
+  });
   it("原节点修改后，链路读取最新参数", () => {
     const nodes = [node(), node()];
     const c = chain(nodes.map((n) => n.id));

@@ -253,21 +253,7 @@ export class API {
           .parse(input);
         const v = s.get<VPS>("vps", q.vpsId);
         return this.tasks.submit("删除远程服务", v.id, (step) =>
-          step("备份、删除、验证与回滚", async () => {
-            const state = await this.ssh.state(v);
-            if (q.kind === "service")
-              state.services = state.services.filter((x) => x.id !== q.id);
-            else state.websites = state.websites.filter((x) => x.id !== q.id);
-            await this.ssh.fq(v, "apply", state);
-            if (q.kind === "service") {
-              const exported = await this.ssh.fq<{ nodes: ProxyNode[] }>(
-                v,
-                "export",
-              );
-              s.sync(v.id, exported.nodes);
-              this.notify();
-            }
-          }),
+          this.orchestrator.remove(v, q.kind, q.id, step),
         );
       }
       case "importSubscription": {

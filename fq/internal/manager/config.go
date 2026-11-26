@@ -89,8 +89,12 @@ func CaddyConfig(s State, root string) M {
 }
 func Export(s State) M {
 	nodes := []any{}
+	hostName := s.HostName
+	if hostName == "" {
+		hostName = s.HostID
+	}
 	for _, v := range s.Services {
-		base := M{"id": s.HostID + ":" + v.ID + ":direct", "name": s.HostID + "-" + v.Protocol, "protocol": v.Protocol, "address": s.PublicAddress, "port": v.PublicPort, "password": v.Password, "uuid": v.UUID, "sni": v.Domain, "tls": v.Protocol != "snell", "insecure": false, "host": v.Domain, "path": v.Path, "publicKey": s.RealityPublicKey, "shortId": s.RealityShortID, "fingerprint": "chrome", "alpn": []string{}, "snellMode": "default", "tagId": "vps-" + s.HostID, "vpsId": s.HostID, "serviceId": v.ID, "source": "vps", "access": v.Access}
+		base := M{"id": s.HostID + ":" + v.ID + ":direct", "name": hostName + "-" + v.Protocol, "protocol": v.Protocol, "address": s.PublicAddress, "port": v.PublicPort, "password": v.Password, "uuid": v.UUID, "sni": v.Domain, "tls": v.Protocol != "snell", "insecure": false, "host": v.Domain, "path": v.Path, "publicKey": s.RealityPublicKey, "shortId": s.RealityShortID, "fingerprint": "chrome", "alpn": []string{}, "snellMode": "default", "tagId": "vps-" + s.HostID, "vpsId": s.HostID, "serviceId": v.ID, "source": "vps", "access": v.Access}
 		if v.Protocol == "vless-reality" {
 			base["sni"] = v.RealityServer
 		}
@@ -104,7 +108,7 @@ func Export(s State) M {
 					copy[k] = value
 				}
 				copy["id"] = s.HostID + ":" + v.ID + ":argo:" + strconv.Itoa(port)
-				copy["name"] = fmt.Sprintf("%s-%s-argo-%d", s.HostID, v.Protocol, port)
+				copy["name"] = fmt.Sprintf("%s-%s-argo-%d", hostName, v.Protocol, port)
 				copy["address"] = v.Domain
 				copy["port"] = port
 				copy["tls"] = port == 443
