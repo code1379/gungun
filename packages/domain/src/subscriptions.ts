@@ -32,6 +32,11 @@ export function shareLink(n: ProxyNode) {
       p.set("fp", n.fingerprint);
     }
   }
+  if (n.certificatePin) p.set("pinSHA256", n.certificatePin);
+  if (n.protocol === "hysteria2" && n.obfs) {
+    p.set("obfs", n.obfs);
+    p.set("obfs-password", n.obfsPassword);
+  }
   if (n.alpn.length) p.set("alpn", n.alpn.join(","));
   u.hash = n.name;
   return u.toString();
@@ -85,6 +90,13 @@ export function parseSubscription(
           : proto;
     if (proto === "vless" && protocol === "vless-ws" && p.get("type") !== "ws")
       throw new Error("当前仅支持 VLESS WS 或 Reality");
+    if (
+      proto === "vless" &&
+      protocol === "vless-reality" &&
+      p.get("type") &&
+      !["tcp", "raw"].includes(p.get("type")!)
+    )
+      throw new Error("当前 Reality 仅支持 TCP，不能静默转换其他传输");
     return nodeSchema.parse({
       id: makeId(),
       name: decodeURIComponent(u.hash.slice(1)) || `${protocol}-${u.hostname}`,
@@ -113,6 +125,9 @@ export function parseSubscription(
       publicKey: p.get("pbk") || "",
       shortId: p.get("sid") || "",
       fingerprint: p.get("fp") || "chrome",
+      certificatePin: p.get("pinSHA256") || "",
+      obfs: p.get("obfs") || "",
+      obfsPassword: p.get("obfs-password") || "",
       alpn: p.get("alpn")?.split(",") || [],
       tagId,
       source: "subscription",
@@ -129,6 +144,17 @@ function fromMihomo(
       "含 dialer-proxy 的订阅不能扁平化为普通节点，请使用链式代理模块",
     );
   const type = String(p.type);
+  if (type === "snell" && Number(p.version) !== 6)
+    throw new Error("当前仅支持 Snell v6，不能转换其他版本");
+  if (type === "vless" && p.encryption && p.encryption !== "none")
+    throw new Error("不支持 VLESS ENC");
+  if (
+    type === "vless" &&
+    p["reality-opts"] &&
+    p.network &&
+    !["tcp", "raw"].includes(String(p.network))
+  )
+    throw new Error("当前 Reality 仅支持 TCP");
   const reality = p["reality-opts"] as Record<string, string> | undefined;
   const ws = p["ws-opts"] as
     { path?: string; headers?: { Host?: string } } | undefined;
@@ -151,6 +177,9 @@ function fromMihomo(
     path: ws?.path || "/",
     host: ws?.headers?.Host || "",
     snellMode: p.mode || "default",
+    certificatePin: p.fingerprint || "",
+    obfs: type === "hysteria2" ? p.obfs || "" : "",
+    obfsPassword: p["obfs-password"] || "",
     alpn: p.alpn || [],
     tagId,
     source: "subscription",

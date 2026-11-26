@@ -43,6 +43,11 @@ export function toMihomo(n: ProxyNode, name = n.name): Record<string, unknown> {
       };
     }
   }
+  if (n.certificatePin) base.fingerprint = n.certificatePin;
+  if (n.protocol === "hysteria2" && n.obfs) {
+    base.obfs = n.obfs;
+    base["obfs-password"] = n.obfsPassword;
+  }
   if (n.protocol === "anytls") base["client-fingerprint"] = n.fingerprint;
   return base;
 }

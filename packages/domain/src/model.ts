@@ -57,6 +57,18 @@ export const nodeSchema = z.object({
   publicKey: z.string().default(""),
   shortId: z.string().default(""),
   fingerprint: z.string().default("chrome"),
+  certificatePin: z
+    .string()
+    .transform((s) => s.replaceAll(":", "").toLowerCase())
+    .pipe(
+      z
+        .string()
+        .regex(/^(?:[a-f0-9]{64})?$/, "证书 SHA256 指纹应为 64 位十六进制"),
+    )
+    .default(""),
+  obfs: z.enum(["", "salamander"]).default(""),
+  obfsPassword: z.string().default(""),
+
   alpn: z.array(z.string()).default([]),
   snellMode: z.enum(["default", "unshaped", "unsafe-raw"]).default("default"),
   tagId: z.string().min(1),

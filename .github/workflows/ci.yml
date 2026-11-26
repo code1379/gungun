@@ -10,7 +10,7 @@ defaults:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
   verify:
@@ -87,6 +87,8 @@ jobs:
       - run: pnpm build
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
+        env:
+          GUNGUN_SCREENSHOT_LOG: "1"
       - name: Build unsigned DMG for testing
         run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
         env:

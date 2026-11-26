@@ -54,6 +54,10 @@
       {
         "from": "../../resources/bin",
         "to": "bin"
+      },
+      {
+        "from": "../../resources/THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
       }
     ],
     "mac": {

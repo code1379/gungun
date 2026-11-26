@@ -159,6 +159,35 @@ describe("订阅与动态聚合", () => {
     expect(parsed[3].password).toBe(nodes[3].password);
   });
 });
+it("不能把 Snell v4 或 Reality WS 静默转换", () => {
+  expect(() =>
+    parseSubscription(
+      "proxies:\n- {name: old, type: snell, version: 4, server: localhost, port: 12345, psk: password}",
+      "tag",
+      randomUUID,
+    ),
+  ).toThrow("Snell v6");
+  expect(() =>
+    parseSubscription(
+      `vless://${randomUUID()}@localhost:443?security=reality&type=ws`,
+      "tag",
+      randomUUID,
+    ),
+  ).toThrow("TCP");
+});
+it("Hysteria2 导入导出保留固定证书指纹与 Salamander", () => {
+  const n = node("hysteria2", {
+    certificatePin: "ab".repeat(32),
+    obfs: "salamander",
+    obfsPassword: "obfs-secret",
+  });
+  const [out] = parseSubscription(shareLink(n), "target", randomUUID);
+  expect(out.certificatePin).toBe(n.certificatePin);
+  expect(out.obfsPassword).toBe("obfs-secret");
+  const [fromYAML] = parseSubscription(exportMihomo([n]), "target", randomUUID);
+  expect(fromYAML.certificatePin).toBe(n.certificatePin);
+  expect(fromYAML.obfs).toBe("salamander");
+});
 describe("能力与连接校验", () => {
   it("仅 WS 可以选择 CDN/Argo，拒绝不支持的 Edge 端口", () => {
     const s = {

@@ -656,24 +656,39 @@ export default function Nodes() {
                   { key: "publicKey", label: "Reality 公钥" },
                   { key: "shortId", label: "Reality Short ID" },
                 ] as const
-              ).map((f) => (
-                <Field key={f.key} label={f.label}>
-                  <input
-                    type={"type" in f ? f.type : "text"}
-                    required={["name", "address", "port"].includes(f.key)}
-                    value={editing[f.key]}
-                    onChange={(e) =>
-                      setEditing({
-                        ...editing,
-                        [f.key]:
-                          f.key === "port"
-                            ? Number(e.target.value)
-                            : e.target.value,
-                      })
-                    }
-                  />
-                </Field>
-              ))}
+              )
+                .filter((f) => {
+                  if (["name", "address", "port"].includes(f.key)) return true;
+                  if (f.key === "sni") return editing.protocol !== "snell";
+                  if (f.key === "uuid")
+                    return (
+                      editing.protocol.startsWith("vless") ||
+                      editing.protocol === "tuic"
+                    );
+                  if (f.key === "password")
+                    return !editing.protocol.startsWith("vless");
+                  if (f.key === "host" || f.key === "path")
+                    return editing.protocol === "vless-ws";
+                  return editing.protocol === "vless-reality";
+                })
+                .map((f) => (
+                  <Field key={f.key} label={f.label}>
+                    <input
+                      type={"type" in f ? f.type : "text"}
+                      required={["name", "address", "port"].includes(f.key)}
+                      value={editing[f.key]}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          [f.key]:
+                            f.key === "port"
+                              ? Number(e.target.value)
+                              : e.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                ))}
               <Field label="协议">
                 <select
                   value={editing.protocol}
@@ -681,6 +696,10 @@ export default function Nodes() {
                     setEditing({
                       ...editing,
                       protocol: e.target.value as ProxyNode["protocol"],
+                      access:
+                        e.target.value === "vless-ws"
+                          ? editing.access
+                          : "direct",
                     })
                   }
                 >
@@ -691,6 +710,109 @@ export default function Nodes() {
                   ))}
                 </select>
               </Field>
+              {editing.protocol === "vless-ws" && (
+                <Field
+                  label="接入方式"
+                  hint="外部 CDN / Argo 节点可标记后使用优选 IP。"
+                >
+                  <select
+                    value={editing.access}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        access: e.target.value as ProxyNode["access"],
+                      })
+                    }
+                  >
+                    <option value="direct">直连</option>
+                    <option value="cdn">Cloudflare CDN</option>
+                    <option value="argo">Argo Tunnel</option>
+                  </select>
+                </Field>
+              )}
+              {editing.protocol === "snell" ? (
+                <Field label="Snell v6 模式">
+                  <select
+                    value={editing.snellMode}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        snellMode: e.target.value as ProxyNode["snellMode"],
+                      })
+                    }
+                  >
+                    {["default", "unshaped", "unsafe-raw"].map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : (
+                <Field
+                  label="ALPN"
+                  hint="多个值用逗号分隔，留空使用协议默认值。"
+                >
+                  <input
+                    value={editing.alpn.join(",")}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        alpn: e.target.value
+                          .split(",")
+                          .map((x) => x.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                </Field>
+              )}
+              {!["snell", "vless-reality"].includes(editing.protocol) && (
+                <Field
+                  label="证书 SHA256 固定指纹"
+                  hint="可选，支持带冒号的十六进制指纹。"
+                >
+                  <input
+                    value={editing.certificatePin}
+                    onChange={(e) =>
+                      setEditing({ ...editing, certificatePin: e.target.value })
+                    }
+                  />
+                </Field>
+              )}
+              {editing.protocol === "hysteria2" && (
+                <>
+                  <Field label="Hysteria2 混淆">
+                    <select
+                      value={editing.obfs}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          obfs: e.target.value as ProxyNode["obfs"],
+                        })
+                      }
+                    >
+                      <option value="">无</option>
+                      <option value="salamander">Salamander</option>
+                    </select>
+                  </Field>
+                  {editing.obfs && (
+                    <Field label="混淆密码">
+                      <input
+                        type="password"
+                        required
+                        value={editing.obfsPassword}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            obfsPassword: e.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                  )}
+                </>
+              )}
               <Field label="所属 Tag">
                 <select
                   value={editing.tagId}

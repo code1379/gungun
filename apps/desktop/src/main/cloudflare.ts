@@ -131,7 +131,12 @@ export class Cloudflare {
     ingress: { hostname?: string; service: string }[],
   ) {
     const path = `/accounts/${account}/cfd_tunnel/${id}/configurations`;
-    const before = await this.request<{ config?: unknown }>(path);
+    let before: { config?: unknown } = {};
+    try {
+      before = await this.request(path);
+    } catch (e) {
+      if (!String(e).includes("404")) throw e;
+    }
     await this.request(path, "PUT", {
       config: { ingress: [...ingress, { service: "http_status:404" }] },
     });

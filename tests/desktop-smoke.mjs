@@ -1,5 +1,5 @@
 import { _electron as electron, expect } from "@playwright/test";
-import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const dir = await mkdtemp(join(tmpdir(), "gungun-smoke-"));
@@ -65,7 +65,9 @@ try {
   await page.getByLabel("第一跳").selectOption({ label: "Smoke A · AnyTLS" });
   await page.getByLabel("最终出口").selectOption({ label: "Smoke B · AnyTLS" });
   await page.getByRole("button", { name: "保存链路" }).click();
-  await expect(page.getByRole("cell", { name: /Smoke HK → US/ })).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Smoke HK → US 2 跳", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByLabel("全局最大并发").fill("7");
   await page.getByRole("button", { name: "保存设置" }).click();
@@ -75,6 +77,11 @@ try {
   ).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await page.screenshot({ path: "test-results/desktop.png" });
+  if (process.env.GUNGUN_SCREENSHOT_LOG === "1")
+    console.log(
+      "GUNGUN_UI_SCREENSHOT:" +
+        (await readFile("test-results/desktop.png")).toString("base64"),
+    );
   const snapshot = await page.evaluate(() => window.gungun.invoke("snapshot"));
   if (
     !snapshot.ok ||
