@@ -187,9 +187,13 @@ func (m *Manager) restart(s State) error {
 		verb := "stop"
 		if item.enabled {
 			verb = "restart"
+			if _, e := m.Command("systemctl", "reset-failed", item.name); e != nil {
+				return e
+			}
 		}
 		if _, e := m.Command("systemctl", verb, item.name); e != nil {
-			return e
+			log, _ := m.Command("journalctl", "-u", item.name, "-n", "30", "--no-pager")
+			return fmt.Errorf("%w; recent log: %s", e, log)
 		}
 	}
 	return nil

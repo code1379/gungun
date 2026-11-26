@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
   serviceSchema,
+  matchesDNSName,
   websiteSchema,
   type ProxyNode,
   type Chain,
@@ -129,6 +130,46 @@ export class Orchestrator {
           this.ssh.fq(vps, "apply", state),
         );
       }
+      if (
+        ((service && service.access !== "direct") ||
+          (website && website.access !== "direct")) &&
+        (!vps.zoneId || !vps.zoneName)
+      )
+        throw new Error("请选择 Cloudflare Zone");
+      if (service) {
+        service = { ...service };
+        const generated = !service.domain;
+        if (generated && vps.zoneName)
+          service.domain = `${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`;
+        if (service.access !== "direct") {
+          const current = service;
+          const cf = new Cloudflare(this.store.settings());
+          service.domain = await step("检查 Cloudflare 边缘证书覆盖", () =>
+            cf.edgeHostname(
+              vps.zoneId,
+              current.domain,
+              generated
+                ? `${current.access}-${vps.namespace}.${vps.zoneName}`
+                : undefined,
+            ),
+          );
+        }
+      }
+      if (website && website.access !== "direct") {
+        const current = website;
+        const cf = new Cloudflare(this.store.settings());
+        await step("检查网站边缘证书覆盖", () =>
+          cf.edgeHostname(vps.zoneId, current.domain),
+        );
+      }
+      const certificateHosts = [
+        ...(service &&
+        !["snell", "vless-reality"].includes(service.protocol) &&
+        service.access !== "argo"
+          ? [service.domain]
+          : []),
+        ...(website && website.access !== "argo" ? [website.domain] : []),
+      ];
       const needsCert =
         (service &&
           service.protocol !== "snell" &&
@@ -139,10 +180,15 @@ export class Orchestrator {
         needsCert &&
         (!state.certificate ||
           Date.parse(state.certificate.notAfter) < Date.now() + 30 * 86400000 ||
-          (website && !state.certificate?.domains?.includes(website.domain)))
+          certificateHosts.some(
+            (host) =>
+              !state.certificate?.domains?.some((pattern) =>
+                matchesDNSName(pattern, host),
+              ),
+          ))
       ) {
         await step("DNS-01 申请独立泛域名证书", () =>
-          this.certificates.issue(vps, website ? [website.domain] : []),
+          this.certificates.issue(vps, certificateHosts),
         );
         state = await this.ssh.state(vps);
       }
@@ -180,7 +226,10 @@ export class Orchestrator {
       if (needsDNS) {
         if (!vps.zoneId || !vps.zoneName)
           throw new Error("请选择 Cloudflare Zone");
-        if (!item.domain.endsWith(`.${vps.zoneName}`))
+        if (
+          item.domain !== vps.zoneName &&
+          !item.domain.endsWith(`.${vps.zoneName}`)
+        )
           throw new Error("域名不在所选 Zone 下");
         const cf = new Cloudflare(this.store.settings());
         if (item.access === "argo") {
@@ -262,8 +311,9 @@ export class Orchestrator {
       await step("预检查、应用、验证与失败回滚", () =>
         this.ssh.fq(vps, "apply", state),
       );
-      await this.sync(vps, step);
+      const synchronized = await this.sync(vps, step);
       this.notify();
+      return synchronized;
     } catch (e) {
       return compensate(undo, e);
     }

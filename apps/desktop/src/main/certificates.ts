@@ -22,6 +22,14 @@ export class Certificates {
     const remote = await this.ssh.state(vps);
     const domains = [
       ...new Set([
+        ...remote.services
+          .filter(
+            (s) =>
+              s.access !== "argo" &&
+              !["snell", "vless-reality"].includes(s.protocol) &&
+              s.domain,
+          )
+          .map((s) => s.domain),
         ...remote.websites
           .filter((w) => w.access !== "argo")
           .map((w) => w.domain),

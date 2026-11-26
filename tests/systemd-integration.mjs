@@ -153,6 +153,24 @@ try {
   console.log(
     "PASS: actual Caddy TLS reverse proxy to arbitrary upstream port",
   );
+} catch (error) {
+  console.error(
+    execFileSync(
+      "sudo",
+      [
+        "journalctl",
+        "-u",
+        "gungun-sing-box",
+        "-u",
+        "gungun-caddy",
+        "-n",
+        "100",
+        "--no-pager",
+      ],
+      { encoding: "utf8" },
+    ),
+  );
+  throw error;
 } finally {
   await new Promise((r) => upstream.close(() => r()));
   try {

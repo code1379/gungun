@@ -250,3 +250,13 @@ export function validateVpsGraph(items: VPS[]) {
     }
   }
 }
+export function matchesDNSName(pattern: string, hostname: string) {
+  const p = pattern.toLowerCase().replace(/\.$/, "");
+  const h = hostname.toLowerCase().replace(/\.$/, "");
+  if (p === h) return true;
+  if (!p.startsWith("*.")) return false;
+  const suffix = p.slice(1);
+  if (!h.endsWith(suffix)) return false;
+  const prefix = h.slice(0, -suffix.length);
+  return prefix.length > 0 && !prefix.includes(".");
+}

@@ -139,3 +139,31 @@ describe("Cloudflare API 与补偿", () => {
     expect(order).toEqual([3, 2, 1]);
   });
 });
+it("Edge 覆盖不足时仅自动域名回退，显式深层域名明确拒绝", async () => {
+  const service = await server((req, _body, res) =>
+    reply(
+      res,
+      req.url?.includes("certificate_packs")
+        ? [{ status: "active", hosts: ["example.com", "*.example.com"] }]
+        : [],
+    ),
+  );
+  try {
+    const cf = new Cloudflare(
+      { cloudflareEmail: "x", cloudflareKey: "x" },
+      service.url,
+    );
+    expect(
+      await cf.edgeHostname(
+        "z",
+        "cdn.a7k2p.example.com",
+        "cdn-a7k2p.example.com",
+      ),
+    ).toBe("cdn-a7k2p.example.com");
+    await expect(
+      cf.edgeHostname("z", "custom.a7k2p.example.com"),
+    ).rejects.toThrow("边缘证书不覆盖");
+  } finally {
+    await service.close();
+  }
+});

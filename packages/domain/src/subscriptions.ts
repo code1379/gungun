@@ -102,7 +102,7 @@ export function parseSubscription(
       name: decodeURIComponent(u.hash.slice(1)) || `${protocol}-${u.hostname}`,
       protocol,
       address: u.hostname.replace(/^\[|\]$/g, ""),
-      port: Number(u.port) || 443,
+      port: u.port ? Number(u.port) : 443,
       uuid: ["vless", "tuic"].includes(proto)
         ? decodeURIComponent(u.username)
         : "",

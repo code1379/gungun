@@ -204,7 +204,7 @@ export default function Deploy() {
                       <input
                         value={service.domain}
                         onChange={(e) => update("domain", e.target.value)}
-                        placeholder="自动生成独立域名"
+                        placeholder="按 Edge 证书覆盖自动选择域名"
                       />
                     </Field>
                   )}

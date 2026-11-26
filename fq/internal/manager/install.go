@@ -194,11 +194,13 @@ func (m *Manager) InstallCore(name string) (M, error) {
 		}
 	}
 	if unit != "" {
+		_, _ = m.Command("systemctl", "reset-failed", unit)
 		if _, e = m.Command("systemctl", "restart", unit); e == nil {
 			e = m.Verify(state)
 		}
 		if e != nil {
 			_, undo := rollback(e)
+			_, _ = m.Command("systemctl", "reset-failed", unit)
 			_, restart := m.Command("systemctl", "restart", unit)
 			return nil, errors.Join(undo, restart)
 		}

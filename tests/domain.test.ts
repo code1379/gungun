@@ -223,3 +223,10 @@ describe("能力与连接校验", () => {
     expect(() => validateVpsGraph([b])).toThrow("不存在");
   });
 });
+it("TLS 通配符只覆盖一层子域名", async () => {
+  const { matchesDNSName } = await import("../packages/domain/src/index");
+  expect(matchesDNSName("*.example.com", "node.example.com")).toBe(true);
+  expect(matchesDNSName("*.example.com", "node.ns.example.com")).toBe(false);
+  expect(matchesDNSName("*.ns.example.com", "node.ns.example.com")).toBe(true);
+  expect(matchesDNSName("*.example.com", "example.com")).toBe(false);
+});

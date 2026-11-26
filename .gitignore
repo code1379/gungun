@@ -8,3 +8,4 @@ resources/bin/
 coverage/
 test-results/
 playwright-report/
+apps/desktop/build/icon.png

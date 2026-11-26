@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Settings, VPS } from "@gungun/domain";
+import { matchesDNSName, type Settings, type VPS } from "@gungun/domain";
 export interface Zone {
   id: string;
   name: string;
@@ -191,6 +191,33 @@ export class Cloudflare {
     return async () => {
       await this.request(`/zones/${zone}/rulesets/${created.id}`, "DELETE");
     };
+  }
+  async edgeHostname(zone: string, desired: string, fallback?: string) {
+    const packs = await this.request<{ status: string; hosts: string[] }[]>(
+      `/zones/${zone}/ssl/certificate_packs?per_page=50`,
+    );
+    const hosts = packs
+      .filter((p) => p.status === "active")
+      .flatMap((p) => p.hosts || []);
+    try {
+      const custom = await this.request<{ status: string; hosts: string[] }[]>(
+        `/zones/${zone}/custom_certificates?per_page=50`,
+      );
+      hosts.push(
+        ...custom
+          .filter((p) => p.status === "active")
+          .flatMap((p) => p.hosts || []),
+      );
+    } catch (e) {
+      if (!/403|404/.test(String(e))) throw e;
+    }
+    const covered = (host: string) =>
+      hosts.some((pattern) => matchesDNSName(pattern, host));
+    if (covered(desired)) return desired;
+    if (fallback && covered(fallback)) return fallback;
+    throw new Error(
+      `Cloudflare 当前生效的边缘证书不覆盖 ${desired}。请选择已覆盖的一级域名，或在 Cloudflare 配置覆盖该域名的边缘证书后重试。VPS 的 Let's Encrypt 证书不会改变 Edge 证书覆盖范围。`,
+    );
   }
   async createChallenge(zone: string, name: string, value: string) {
     const record = await this.request<{ id: string }>(

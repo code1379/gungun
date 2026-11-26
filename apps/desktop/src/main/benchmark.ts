@@ -56,13 +56,19 @@ export class Benchmark {
     settings: Settings,
     speed: boolean,
   ): Promise<Measurement> {
+    const downloadURL = new URL(settings.downloadUrl);
+    if (
+      downloadURL.hostname === "speed.cloudflare.com" &&
+      downloadURL.pathname === "/__down"
+    )
+      downloadURL.searchParams.set("bytes", String(settings.downloadBytes));
     const config = mihomoConfig(nodes, chain, await freePort());
     if (process.env.GUNGUN_CORE_DEBUG) config["log-level"] = "debug";
     if (source)
       return this.ssh.fq<Measurement>(source, "bench", {
         config,
         latencyUrl: settings.latencyUrl,
-        downloadUrl: settings.downloadUrl,
+        downloadUrl: downloadURL.toString(),
         downloadBytes: settings.downloadBytes,
         timeoutMs: settings.timeoutMs,
         speed,
@@ -135,7 +141,7 @@ export class Benchmark {
             "--range",
             `0-${settings.downloadBytes - 1}`,
             "--",
-            settings.downloadUrl,
+            downloadURL.toString(),
           ],
           {
             timeout: settings.timeoutMs + 2000,

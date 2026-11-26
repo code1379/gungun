@@ -175,7 +175,7 @@ export default function Network() {
                     setWebsite({
                       id: `site-${Date.now()}`,
                       domain: vps.zoneName
-                        ? `web.${vps.namespace}.${vps.zoneName}`
+                        ? `web-${vps.namespace}.${vps.zoneName}`
                         : "",
                       target: "127.0.0.1",
                       targetPort: 3000,
