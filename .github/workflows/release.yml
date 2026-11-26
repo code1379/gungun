@@ -1,0 +1,107 @@
+name: Release
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-go@v5
+        with: { go-version: 1.25.4, cache: false }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint && pnpm typecheck && pnpm test
+      - run: pnpm cores:download
+        env: { WITH_SINGBOX: "1", GH_TOKEN: "${{ github.token }}" }
+      - working-directory: fq
+        run: go test -race -v ./...
+        env:
+          SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
+          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
+      - run: pnpm test:integration
+      - run: pnpm fq:build
+        env: { RELEASE_VERSION: "${{ github.ref_name }}" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fq-linux
+          path: resources/bin/fq-linux-*
+          if-no-files-found: error
+  macos:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, arch: arm64 }
+          - { runner: macos-15-intel, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-go@v5
+        with: { go-version: 1.25.4, cache: false }
+      - run: pnpm install --frozen-lockfile
+      - name: Set application version for version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/set-version.mjs
+        env: { RELEASE_VERSION: "${{ github.ref_name }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: fq-linux, path: resources/bin }
+      - run: pnpm cores:download
+        env:
+          { BUILD_ARCH: "${{ matrix.arch }}", GH_TOKEN: "${{ github.token }}" }
+      - run: pnpm build && pnpm test:desktop
+      - name: Package DMG with optional signing and notarization
+        run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - run: node scripts/verify-dmg.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            test-results/
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: [verify, macos]
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: macos-*
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with: { name: fq-linux, path: artifacts/fq }
+      - name: Collect verified binaries and SHA256
+        run: |
+          mkdir release-assets
+          find artifacts -type f \( -name '*.dmg' -o -name 'fq-linux-*' \) -exec cp {} release-assets/ \;
+          test "$(find release-assets -name '*.dmg' | wc -l)" -eq 2
+          test "$(find release-assets -name 'fq-linux-*' | wc -l)" -eq 2
+          cd release-assets
+          sha256sum * > SHA256SUMS
+      - name: Publish final release
+        run: gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "Gungun $RELEASE_TAG" --notes-file docs/release-notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

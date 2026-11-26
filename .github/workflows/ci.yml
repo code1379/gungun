@@ -1,0 +1,97 @@
+name: CI
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.4
+          cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm exec vitest run --reporter=default --reporter=junit --outputFile=test-results/unit.xml
+      - run: pnpm cores:download
+        env:
+          WITH_SINGBOX: "1"
+          GH_TOKEN: ${{ github.token }}
+      - name: Go race tests and six real sing-box protocols
+        working-directory: fq
+        env:
+          SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
+          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
+        run: go test -race -v ./... | tee ../test-results/go.txt
+      - name: Real Mihomo chain and failure localization
+        run: pnpm test:integration | tee test-results/chain.txt
+      - run: pnpm fq:build
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-report
+          path: test-results/
+          if-no-files-found: warn
+  macos:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.4
+          cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fq:build
+      - run: pnpm cores:download
+        env:
+          BUILD_ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+      - run: pnpm build
+      - name: Real desktop workflow on macOS
+        run: pnpm test:desktop
+      - name: Build unsigned DMG for testing
+        run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Mount DMG, install app into isolated directory and launch
+        run: node scripts/verify-dmg.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-build-macos-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            resources/bin/fq-linux-*
+            test-results/
+          if-no-files-found: error
