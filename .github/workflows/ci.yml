@@ -4,6 +4,9 @@ on:
     branches: [main, development]
   pull_request:
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 concurrency:
@@ -41,11 +44,15 @@ jobs:
       - name: Real Mihomo chain and failure localization
         run: pnpm test:integration | tee test-results/chain.txt
       - run: pnpm fq:build
+      - name: Real systemd deployment, Caddy and rollback
+        run: node tests/systemd-integration.mjs
       - run: pnpm build
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: verification-report
+          retention-days: 1
           path: test-results/
           if-no-files-found: warn
   macos:
@@ -88,8 +95,10 @@ jobs:
         run: node scripts/verify-dmg.mjs
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: test-build-macos-${{ matrix.arch }}
+          retention-days: 1
           path: |
             release/*.dmg
             resources/bin/fq-linux-*

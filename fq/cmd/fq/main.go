@@ -116,9 +116,6 @@ func run(args []string) error {
 				result, e = m.Apply(state)
 			}
 		case "backup":
-			var id string
-			id, e = m.Backup()
-			result = manager.M{"backupId": id}
 			if len(args) > 1 && args[1] == "list" {
 				entries, err := os.ReadDir(filepath.Join(m.Root, "backups"))
 				e = err
@@ -128,7 +125,14 @@ func run(args []string) error {
 						ids = append(ids, entry.Name())
 					}
 				}
+				if os.IsNotExist(e) {
+					e = nil
+				}
 				result = manager.M{"backups": ids}
+			} else {
+				var id string
+				id, e = m.Backup()
+				result = manager.M{"backupId": id}
 			}
 		case "restore":
 			if len(args) != 2 {

@@ -184,7 +184,7 @@ export function ErrorView({ error }: { error: string }) {
     null;
   try {
     const start = error.indexOf("{");
-    host = JSON.parse(error.slice(start));
+    host = JSON.parse(error.slice(start, error.lastIndexOf("}") + 1));
     if (!host?.code?.startsWith("HOST_KEY")) host = null;
   } catch {
     /* 普通错误 */

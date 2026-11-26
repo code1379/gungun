@@ -155,15 +155,55 @@ func (m *Manager) InstallCore(name string) (M, error) {
 	if name == "mihomo" {
 		versionArg = "-v"
 	}
+	rollback := func(cause error) (M, error) {
+		var undo error
+		if previous != nil {
+			undo = AtomicWrite(path, previous, 0755)
+		} else {
+			undo = os.Remove(path)
+		}
+		return nil, errors.Join(cause, undo)
+	}
 	out, e := m.Command(path, versionArg)
 	if e != nil {
-		if previous != nil {
-			_ = AtomicWrite(path, previous, 0755)
-		} else {
-			_ = os.Remove(path)
-		}
-		return nil, e
+		return rollback(e)
 	}
+	state, e := m.Load()
+	if e != nil {
+		return rollback(e)
+	}
+	unit := ""
+	switch name {
+	case "sing-box":
+		if len(state.Services) > 0 {
+			unit = "gungun-sing-box"
+			if _, e = m.Command(path, "check", "-c", filepath.Join(m.Root, "sing-box.json")); e != nil {
+				return rollback(e)
+			}
+		}
+	case "caddy":
+		if len(state.Websites) > 0 {
+			unit = "gungun-caddy"
+			if _, e = m.Command(path, "validate", "--config", filepath.Join(m.Root, "caddy.json")); e != nil {
+				return rollback(e)
+			}
+		}
+	case "cloudflared":
+		if state.TunnelToken != "" {
+			unit = "gungun-tunnel"
+		}
+	}
+	if unit != "" {
+		if _, e = m.Command("systemctl", "restart", unit); e == nil {
+			e = m.Verify(state)
+		}
+		if e != nil {
+			_, undo := rollback(e)
+			_, restart := m.Command("systemctl", "restart", unit)
+			return nil, errors.Join(undo, restart)
+		}
+	}
+
 	return M{"ok": true, "core": name, "version": strings.TrimSpace(string(out))}, nil
 }
 func (m *Manager) InstallUnits() error {
@@ -173,7 +213,7 @@ func (m *Manager) InstallUnits() error {
 		"gungun-tunnel":   "EnvironmentFile=" + m.Root + "/tunnel.env\nExecStart=" + m.Bin + "/cloudflared tunnel --no-autoupdate run\n",
 	}
 	for name, command := range units {
-		data := "[Unit]\nDescription=Gungun managed " + name + "\nAfter=network-online.target\nWants=network-online.target\nConditionPathExists=" + m.Root + "/state.json\n[Service]\n" + command + "Restart=on-failure\nRestartSec=3\nUMask=0077\nNoNewPrivileges=true\nProtectHome=true\nProtectSystem=full\nPrivateTmp=true\n[Install]\nWantedBy=multi-user.target\n"
+		data := "[Unit]\nDescription=Gungun managed " + name + "\nAfter=network-online.target\nWants=network-online.target\nConditionPathExists=" + m.Root + "/state.json\nConditionPathExists=" + m.Root + "/" + strings.TrimPrefix(name, "gungun-") + ".enabled\n[Service]\n" + command + "StateDirectory=" + name + "\nEnvironment=XDG_DATA_HOME=/var/lib/" + name + "\nRestart=on-failure\nRestartSec=3\nUMask=0077\nNoNewPrivileges=true\nProtectHome=true\nProtectSystem=full\nPrivateTmp=true\n[Install]\nWantedBy=multi-user.target\n"
 		if e := AtomicWrite("/etc/systemd/system/"+name+".service", []byte(data), 0644); e != nil {
 			return e
 		}

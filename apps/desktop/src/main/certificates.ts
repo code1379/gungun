@@ -7,6 +7,7 @@ import { Cloudflare } from "./cloudflare";
 import type { SSH } from "./ssh";
 import type { Store } from "./store";
 export class Certificates {
+  private accountKey: Promise<Buffer> | undefined;
   constructor(
     private store: Store,
     private ssh: SSH,
@@ -31,15 +32,19 @@ export class Certificates {
       domain,
       domains,
     });
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const path = join(this.directory, "acme-account.pem");
-    let accountKey: Buffer;
-    try {
-      accountKey = await readFile(path);
-    } catch {
-      accountKey = await acme.crypto.createPrivateKey();
-      await writeFile(path, accountKey, { mode: 0o600, flag: "wx" });
-    }
+    this.accountKey ??= (async () => {
+      await mkdir(this.directory, { recursive: true, mode: 0o700 });
+      const path = join(this.directory, "acme-account.pem");
+      try {
+        return await readFile(path);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        const key = await acme.crypto.createPrivateKey();
+        await writeFile(path, key, { mode: 0o600, flag: "wx" });
+        return key;
+      }
+    })();
+    const accountKey = await this.accountKey;
     const client = new acme.Client({
       directoryUrl: acme.directory.letsencrypt.production,
       accountKey,

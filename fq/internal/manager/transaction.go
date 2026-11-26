@@ -95,7 +95,7 @@ func AtomicWrite(path string, b []byte, mode os.FileMode) error {
 	return os.Rename(name, path)
 }
 
-var managedFiles = []string{"state.json", "sing-box.json", "caddy.json", "tunnel.env", "key.pem", "cert.pem"}
+var managedFiles = []string{"state.json", "sing-box.json", "caddy.json", "tunnel.env", "key.pem", "cert.pem", "sing-box.enabled", "caddy.enabled", "tunnel.enabled"}
 
 func (m *Manager) Backup() (string, error) {
 	id := time.Now().UTC().Format("20060102T150405.000000000Z")
@@ -164,6 +164,22 @@ func (m *Manager) precheck(s State, dir string) error {
 	return nil
 }
 func (m *Manager) restart(s State) error {
+	for _, item := range []struct {
+		name    string
+		enabled bool
+	}{{"sing-box", len(s.Services) > 0}, {"caddy", len(s.Websites) > 0}, {"tunnel", s.TunnelToken != ""}} {
+		path := filepath.Join(m.Root, item.name+".enabled")
+		if item.enabled {
+			if e := AtomicWrite(path, []byte("enabled\n"), 0600); e != nil {
+				return e
+			}
+		} else {
+			if e := os.Remove(path); e != nil && !os.IsNotExist(e) {
+				return e
+			}
+		}
+	}
+
 	for _, item := range []struct {
 		name    string
 		enabled bool
@@ -258,11 +274,22 @@ func (m *Manager) Apply(s State) (M, error) {
 	if e = m.Verify(s); e != nil {
 		return rollback(e)
 	}
-	return M{"ok": true, "backupId": backup, "state": redactedState(s)}, nil
+	return M{"ok": true, "backupId": backup}, nil
 }
 func redactedState(s State) State              { s.TunnelToken = ""; s.RealityPrivateKey = ""; return s }
 func (m *Manager) PublicState() (State, error) { s, e := m.Load(); return redactedState(s), e }
 func (m *Manager) verify(s State) error {
+	var last error
+	for attempt := 0; attempt < 40; attempt++ {
+		last = m.verifyOnce(s)
+		if last == nil {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return last
+}
+func (m *Manager) verifyOnce(s State) error {
 	for _, item := range []struct {
 		name    string
 		enabled bool
@@ -275,17 +302,31 @@ func (m *Manager) verify(s State) error {
 	}
 	for _, v := range s.Services {
 		if v.Protocol == "tuic" || v.Protocol == "hysteria2" {
+			out, e := m.Command("ss", "-H", "-lnu", "sport", "=", fmt.Sprintf(":%d", v.Port))
+			if e != nil {
+				return e
+			}
+			if len(bytes.TrimSpace(out)) == 0 {
+				return fmt.Errorf("UDP port %d not listening", v.Port)
+			}
 			continue
 		}
-		host := "127.0.0.1"
-		conn, e := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, v.Port), 3*time.Second)
+		conn, e := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", v.Port), 500*time.Millisecond)
 		if e != nil {
 			return fmt.Errorf("listen verification: %w", e)
 		}
 		conn.Close()
 	}
+	for _, w := range s.Websites {
+		conn, e := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", w.Port), 500*time.Millisecond)
+		if e != nil {
+			return fmt.Errorf("website listener: %w", e)
+		}
+		conn.Close()
+	}
 	return nil
 }
+
 func Decode(reader io.Reader, target any) error {
 	d := json.NewDecoder(io.LimitReader(reader, 4<<20))
 	d.DisallowUnknownFields()

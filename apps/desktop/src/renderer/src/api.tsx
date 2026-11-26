@@ -92,7 +92,7 @@ export function useApp() {
 export function errorText(error: string) {
   try {
     const start = error.indexOf("{");
-    const obj = JSON.parse(error.slice(start)) as {
+    const obj = JSON.parse(error.slice(start, error.lastIndexOf("}") + 1)) as {
       code: string;
       message: string;
     };
