@@ -10,6 +10,8 @@ import {
   resolveTag,
   serviceSchema,
   shareLink,
+  singboxConfig,
+  toSingBox,
   validateChain,
   validateVpsGraph,
   vpsSchema,
@@ -35,6 +37,44 @@ const chain = (ids: string[]): Chain => ({
   id: randomUUID(),
   name: "HK → US",
   nodeIds: ids,
+});
+describe("sing-box 执行配置", () => {
+  it("detour 逐跳连接并读取引用节点的最新地址", () => {
+    const nodes = [node("hysteria2"), node("anytls"), node("snell")];
+    const c = chain(nodes.map((n) => n.id));
+    nodes[1].address = "updated.example.com";
+    const config = singboxConfig(nodes, c, 12345);
+    expect(config.outbounds.map((n) => n.detour)).toEqual([
+      undefined,
+      "gungun-hop-1",
+      "gungun-hop-2",
+    ]);
+    expect(config.outbounds[1].server).toBe("updated.example.com");
+    expect(config.route.final).toBe("gungun-hop-3");
+    expect(config.inbounds[0].listen_port).toBe(12345);
+  });
+  it("不把整张证书指纹静默丢弃或误用为 SPKI 指纹", () => {
+    expect(() =>
+      toSingBox(node("hysteria2", { certificatePin: "ab".repeat(32) }), "test"),
+    ).toThrow("整张证书");
+  });
+  it("保留 WS Host、TLS SNI 和路径，Reality 使用独立参数", () => {
+    const ws = toSingBox(node("vless-ws", { tls: true }), "ws");
+    expect(ws.transport).toMatchObject({
+      type: "ws",
+      path: "/test",
+      headers: { Host: "node.example.com" },
+    });
+    expect(ws.tls).toMatchObject({ server_name: "node.example.com" });
+    const reality = toSingBox(
+      node("vless-reality", { publicKey: "public-key", shortId: "aabb" }),
+      "reality",
+    );
+    expect(reality.transport).toBeUndefined();
+    expect(reality.tls).toMatchObject({
+      reality: { enabled: true, public_key: "public-key", short_id: "aabb" },
+    });
+  });
 });
 describe("链式代理模型与 Mihomo 配置", () => {
   it("按顺序拨号，最终规则选择最后一跳", () => {
@@ -66,12 +106,25 @@ describe("链式代理模型与 Mihomo 配置", () => {
     expect(chainProxies(c, nodes)[1].port).toBe(8443);
   });
   it("拒绝缺失引用、重复节点和后续 UDP 拨号", () => {
-    const a = node(),
+    const a = node("anytls"),
       b = node("tuic");
     expect(() => validateChain(chain([a.id, b.id]), [a, b])).toThrow("UDP");
     expect(() => validateChain(chain([a.id, "gone"]), [a])).toThrow("已删除");
     expect(() => validateChain(chain([a.id, a.id]), [a])).toThrow("重复");
     expect(validateChain(chain([b.id, a.id]), [a, b])).toHaveLength(2);
+  });
+  it.each([
+    ["hysteria2", "vless-ws"],
+    ["hysteria2", "vless-reality"],
+    ["tuic", "vless-ws"],
+    ["tuic", "vless-reality"],
+  ])("拒绝当前核心不稳定的 %s → %s，保留节点参数", (first, last) => {
+    const nodes = [node(first), node(last)];
+    const before = structuredClone(nodes);
+    expect(() => singboxConfig(nodes, chain(nodes.map((n) => n.id)))).toThrow(
+      "实测下载不稳定",
+    );
+    expect(nodes).toEqual(before);
   });
   it("拒绝把链路导出成普通分享链接", () => {
     expect(() => exportBase64([node()], true)).toThrow("无法表达");

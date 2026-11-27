@@ -27,13 +27,13 @@ try {
   await mkdir(join(directory, "installed"));
   execFileSync("ditto", [join(mount, "Gungun.app"), installed]);
   const binaries = join(installed, "Contents", "Resources", "bin");
-  execFileSync(join(binaries, `mihomo-darwin-${process.arch === "x64" ? "amd64" : process.arch}`), ["-v"], { stdio: "inherit" });
+  execFileSync(join(binaries, `sing-box-darwin-${process.arch === "x64" ? "amd64" : process.arch}`), ["version"], { stdio: "inherit" });
   for (const [arch, machine] of [["amd64", 62], ["arm64", 183]]) {
     const binary = await readFile(join(binaries, `fq-linux-${arch}`));
     if (binary.length < 100000 || !binary.subarray(0, 4).equals(Buffer.from([0x7f, 69, 76, 70])) || binary.readUInt16LE(18) !== machine)
       throw new Error(`Invalid bundled fq Linux ${arch} executable`);
   }
-  console.log("Verified bundled native Mihomo and both fq ELF architectures.");
+  console.log("Verified bundled native sing-box and both fq ELF architectures.");
 
   execFileSync(process.execPath, ["tests/desktop-smoke.mjs"], {
     env: {
@@ -50,3 +50,4 @@ try {
     await rm(directory, { recursive: true, force: true });
   }
 }
+

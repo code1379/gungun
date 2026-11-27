@@ -58,7 +58,9 @@ func run(args []string) error {
 	} else {
 		if args[0] != "status" && args[0] != "log" {
 			unlock, err := m.Lock()
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			defer unlock()
 		}
 		switch args[0] {
@@ -147,7 +149,7 @@ func run(args []string) error {
 				name = args[2]
 			}
 			if len(args) < 2 || args[1] != "update" {
-				return errors.New("usage: fq core update [sing-box|mihomo|caddy|cloudflared]")
+				return errors.New("usage: fq core update [sing-box|caddy|cloudflared]")
 			}
 			result, e = m.InstallCore(name)
 		case "install":

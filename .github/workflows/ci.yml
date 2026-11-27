@@ -17,13 +17,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.25.4
           cache: false
@@ -33,39 +33,30 @@ jobs:
       - run: pnpm exec vitest run --reporter=default --reporter=junit --outputFile=test-results/unit.xml
       - run: pnpm cores:download
         env:
-          WITH_SINGBOX: "1"
           GH_TOKEN: ${{ github.token }}
+          WITH_CADDY: "1"
       - name: Go race tests and six real sing-box protocols
         working-directory: fq
         env:
           SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
-          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
         run: go test -race -v ./... | tee ../test-results/go.txt
-      - name: Real Mihomo chain and failure localization
+      - name: Real sing-box detour chain and failure localization
         run: pnpm test:integration | tee test-results/chain.txt
       - run: pnpm fq:build
       - name: Real systemd deployment, Caddy and rollback
         run: node tests/systemd-integration.mjs
       - run: pnpm build
-      - uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
-        with:
-          name: verification-report
-          retention-days: 1
-          path: test-results/
-          if-no-files-found: warn
   macos:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.25.4
           cache: false
@@ -80,20 +71,4 @@ jobs:
         run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
-      - name: Build unsigned DMG for testing
-        run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Mount DMG, install app into isolated directory and launch
-        run: node scripts/verify-dmg.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
-        with:
-          name: test-build-macos-arm64
-          retention-days: 1
-          path: |
-            release/*.dmg
-            resources/bin/fq-linux-*
-            test-results/
-          if-no-files-found: error
+

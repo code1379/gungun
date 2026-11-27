@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -25,18 +24,34 @@ import (
 )
 
 func TestCorruptedBackupNeverChangesLiveConfiguration(t *testing.T) {
-  m := fakeManager(t)
-  if _, err := m.Apply(fixture()); err != nil { t.Fatal(err) }
-  before, err := os.ReadFile(filepath.Join(m.Root, "state.json"))
-  if err != nil { t.Fatal(err) }
-  id, err := m.Backup()
-  if err != nil { t.Fatal(err) }
-  if err = os.WriteFile(filepath.Join(m.Root, "backups", id, "state.json"), []byte("corrupt"), 0600); err != nil { t.Fatal(err) }
-  if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "checksum") { t.Fatalf("expected checksum rejection: %v", err) }
-  after, _ := os.ReadFile(filepath.Join(m.Root, "state.json"))
-  if string(after) != string(before) { t.Fatal("corrupt backup changed live state") }
-  if err = os.Remove(filepath.Join(m.Root, "backups", id, "manifest.json")); err != nil { t.Fatal(err) }
-  if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "incomplete") { t.Fatalf("expected incomplete backup rejection: %v", err) }
+	m := fakeManager(t)
+	if _, err := m.Apply(fixture()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(m.Root, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := m.Backup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(m.Root, "backups", id, "state.json"), []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("expected checksum rejection: %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(m.Root, "state.json"))
+	if string(after) != string(before) {
+		t.Fatal("corrupt backup changed live state")
+	}
+	if err = os.Remove(filepath.Join(m.Root, "backups", id, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.RestoreFiles(id); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("expected incomplete backup rejection: %v", err)
+	}
 }
 func fixture() State {
 	return State{SchemaVersion: 1, HostID: "test-host", Kind: "public", PublicAddress: "127.0.0.1", Namespace: "a7k2p", ZoneName: "example.com", Services: []Service{}, Websites: []Website{}}
@@ -236,9 +251,9 @@ func makeCertificates(t *testing.T, dir string) {
 	}
 }
 func TestRealCoreSixProtocolsAndChain(t *testing.T) {
-	sing, mihomo := os.Getenv("SING_BOX_BINARY"), os.Getenv("MIHOMO_BINARY")
-	if sing == "" || mihomo == "" {
-		t.Skip("real-core paths not supplied")
+	sing := os.Getenv("SING_BOX_BINARY")
+	if sing == "" {
+		t.Skip("real sing-box path not supplied")
 	}
 	root := t.TempDir()
 	makeCertificates(t, root)
@@ -247,52 +262,63 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 	tlsTarget.EnableHTTP2 = true
 	tlsTarget.StartTLS()
 	defer tlsTarget.Close()
-	s := fixture()
-	for _, proto := range []string{"hysteria2", "tuic", "anytls", "snell", "vless-ws", "vless-reality"} {
-		v := service(proto, 0)
-		if proto == "vless-reality" {
-			v.RealityServer = "localhost"
-			v.RealityPort = tlsTarget.Listener.Addr().(*net.TCPAddr).Port
+	makeState := func(hostID string, protocols []string) State {
+		state := fixture()
+		state.HostID = hostID
+		for _, protocol := range protocols {
+			item := service(protocol, 0)
+			if protocol == "vless-reality" {
+				item.RealityServer = "localhost"
+				item.RealityPort = tlsTarget.Listener.Addr().(*net.TCPAddr).Port
+			}
+			state.Services = append(state.Services, item)
 		}
-		s.Services = append(s.Services, v)
-	}
-	if e := s.Normalize(); e != nil {
-		t.Fatal(e)
-	}
-	path := filepath.Join(root, "sing-box.json")
-	b, _ := json.Marshal(SingBoxConfig(s, root))
-	_ = os.WriteFile(path, b, 0600)
-	if out, e := exec.Command(sing, "check", "-c", path).CombinedOutput(); e != nil {
-		t.Fatalf("core config: %v: %s", e, out)
+		if err := state.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		return state
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	log, e := os.Create(filepath.Join(root, "server.log"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer log.Close()
-	server := exec.CommandContext(ctx, sing, "run", "-c", path)
-	server.Stdout = log
-	server.Stderr = log
-	if e = server.Start(); e != nil {
-		t.Fatal(e)
-	}
-	defer func() { cancel(); _ = server.Wait() }()
-	waitForPort := func(port int) {
+	startServer := func(state State, name string) {
 		t.Helper()
+		path := filepath.Join(root, name+".json")
+		cfg := SingBoxConfig(state, root)
+		cfg["log"] = M{"level": "debug", "timestamp": true}
+		data, _ := json.Marshal(cfg)
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(sing, "check", "-c", path).CombinedOutput(); err != nil {
+			t.Fatalf("server check: %v: %s", err, out)
+		}
+		logPath := filepath.Join(root, name+".log")
+		output, err := os.Create(logPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		process := exec.CommandContext(ctx, sing, "run", "--disable-color", "-c", path)
+		process.Stdout, process.Stderr = output, output
+		if err = process.Start(); err != nil {
+			output.Close()
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = process.Process.Kill(); _ = process.Wait(); _ = output.Close() })
 		deadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(deadline) {
-			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)
-			if err == nil { conn.Close(); return }
+			contents, _ := os.ReadFile(logPath)
+			if strings.Contains(string(contents), "sing-box started") {
+				return
+			}
 			time.Sleep(25 * time.Millisecond)
 		}
-		logs, _ := os.ReadFile(filepath.Join(root, "server.log"))
-		t.Fatalf("core listener %d not ready: %s", port, logs)
+		contents, _ := os.ReadFile(logPath)
+		t.Fatalf("server %s not ready: %s", name, contents)
 	}
-	for _, item := range s.Services {
-		if item.Protocol != "hysteria2" && item.Protocol != "tuic" { waitForPort(item.Port) }
-	}
+	first := makeState("entry-host", []string{"hysteria2", "tuic", "anytls", "snell", "vless-ws", "vless-reality"})
+	startServer(first, "entry")
+	second := makeState("exit-host", []string{"anytls", "snell", "vless-ws", "vless-reality"})
+	startServer(second, "exit")
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/download" {
 			_, _ = w.Write(make([]byte, 1000000))
@@ -301,99 +327,77 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		}
 	}))
 	defer target.Close()
+	firstNodes, secondNodes := Export(first)["nodes"].([]any), Export(second)["nodes"].([]any)
+	allNodes := append(append([]any{}, firstNodes...), secondNodes...)
+	for _, raw := range allNodes {
+		if raw.(M)["protocol"] != "vless-reality" {
+			raw.(M)["insecure"] = true
+		}
+	}
+	type configRequest struct {
+		Nodes   []any    `json:"nodes"`
+		NodeIDs []string `json:"nodeIds,omitempty"`
+	}
+	requests := []configRequest{}
+	for _, node := range firstNodes {
+		requests = append(requests, configRequest{Nodes: []any{node}})
+	}
+	names := []string{}
+	for _, entry := range firstNodes {
+		for _, exit := range secondNodes {
+			requests = append(requests, configRequest{Nodes: allNodes, NodeIDs: []string{entry.(M)["id"].(string), exit.(M)["id"].(string)}})
+			names = append(names, entry.(M)["protocol"].(string)+"-to-"+exit.(M)["protocol"].(string))
+		}
+	}
+	input, _ := json.Marshal(requests)
+	project, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := exec.Command("node", "--import", "tsx", filepath.Join(project, "tests/runtime-configs.ts"))
+	builder.Dir = project
+	builder.Stdin = strings.NewReader(string(input))
+	var diagnostics strings.Builder
+	builder.Stderr = &diagnostics
+	data, err := builder.Output()
+	if err != nil {
+		t.Fatalf("actual TypeScript runtime converter: %v: %s", err, diagnostics.String())
+	}
+	var configs []M
+	if err = json.Unmarshal(data, &configs); err != nil || len(configs) != len(requests) {
+		t.Fatalf("client configs: %v", err)
+	}
 	bin := t.TempDir()
-	if e = os.Symlink(mihomo, filepath.Join(bin, "mihomo")); e != nil {
-		t.Fatal(e)
+	if err = os.Symlink(sing, filepath.Join(bin, "sing-box")); err != nil {
+		t.Fatal(err)
 	}
-	m := New(root, bin)
-	proxies := []M{}
-	for _, v := range s.Services {
-		p := M{"name": v.ID, "type": v.Protocol, "server": "127.0.0.1", "port": v.Port, "sni": "localhost", "skip-cert-verify": true, "udp": true}
-		switch v.Protocol {
-		case "hysteria2", "anytls":
-			p["password"] = v.Password
-		case "tuic":
-			p["uuid"] = v.UUID
-			p["password"] = v.Password
-			p["congestion-controller"] = "bbr"
-			p["alpn"] = []string{"h3"}
-		case "snell":
-			p["psk"] = v.Password
-			p["version"] = 6
-		case "vless-ws":
-			p["type"] = "vless"
-			p["uuid"] = v.UUID
-			p["network"] = "ws"
-			p["tls"] = true
-			p["servername"] = "localhost"
-			p["ws-opts"] = M{"path": v.Path, "headers": M{"Host": "localhost"}}
-		case "vless-reality":
-			p["type"] = "vless"
-			p["uuid"] = v.UUID
-			p["tls"] = true
-			p["flow"] = "xtls-rprx-vision"
-			p["servername"] = v.RealityServer
-			p["client-fingerprint"] = "chrome"
-			p["reality-opts"] = M{"public-key": s.RealityPublicKey, "short-id": s.RealityShortID}
+	manager := New(root, bin)
+	run := func(t *testing.T, config M) {
+		t.Helper()
+		result, err := manager.Benchmark(BenchRequest{Config: config, LatencyURL: target.URL, DownloadURL: target.URL + "/download", DownloadBytes: 1000000, TimeoutMS: 15000, Speed: true})
+		if err != nil {
+			entry, _ := os.ReadFile(filepath.Join(root, "entry.log"))
+			exit, _ := os.ReadFile(filepath.Join(root, "exit.log"))
+			t.Fatalf("actual sing-box proxy request: %v\nentry log: %s\nexit log: %s", err, entry, exit)
 		}
-		proxies = append(proxies, p)
+		if result["speedMBps"] == nil {
+			t.Fatal("no actual download")
+		}
 	}
-	request := func(config M) (M, error) {
-		return m.Benchmark(BenchRequest{Config: config, LatencyURL: target.URL, DownloadURL: target.URL + "/download", DownloadBytes: 1000000, TimeoutMS: 15000, Speed: true})
+	for i, node := range firstNodes {
+		t.Run(node.(M)["protocol"].(string), func(t *testing.T) { run(t, configs[i]) })
 	}
-	for _, p := range proxies {
-		p := p
-		t.Run(p["name"].(string), func(t *testing.T) {
-			r, e := request(M{"proxies": []any{p}, "mode": "rule", "rules": []string{"MATCH," + p["name"].(string)}, "log-level": "warning"})
-			if e != nil {
-				logs, _ := os.ReadFile(filepath.Join(root, "server.log"))
-				t.Fatalf("real request: %v\n%s", e, logs)
-			}
-			if r["speedMBps"] == nil {
-				t.Fatal("no real download")
-			}
-		})
-	}
-	for _, entry := range proxies {
-		for _, final := range proxies {
-			if final["name"] == "hysteria2" || final["name"] == "tuic" { continue }
-			t.Run("chain-matrix/"+entry["name"].(string)+"-to-"+final["name"].(string), func(t *testing.T) {
-				exit := M{}
-				for key, value := range final { exit[key] = value }
-				exit["name"] = "matrix-exit"
-				exit["dialer-proxy"] = entry["name"]
-				result, err := request(M{"proxies": []any{entry, exit}, "mode": "rule", "rules": []string{"MATCH,matrix-exit"}, "log-level": "warning"})
-				if err != nil { t.Fatalf("actual protocol-chain compatibility: %v", err) }
-				if result["speedMBps"] == nil { t.Fatal("chain matrix did not download real data") }
+	for i, name := range names {
+		config := configs[len(firstNodes)+i]
+		if rejection, unsupported := config["unsupported"].(string); unsupported {
+			t.Run("unsupported-chain/"+name, func(t *testing.T) {
+				if !strings.Contains(rejection, "实测下载不稳定") {
+					t.Fatal("unexpected capability rejection", rejection)
+				}
 			})
+			continue
 		}
-	}
-	second := fixture()
-	second.Services = []Service{service("snell", 0)}
-	if e = second.Normalize(); e != nil {
-		t.Fatal(e)
-	}
-	v := second.Services[0]
-	b, _ = json.Marshal(SingBoxConfig(second, root))
-	path2 := filepath.Join(root, "second.json")
-	_ = os.WriteFile(path2, b, 0600)
-	server2 := exec.CommandContext(ctx, sing, "run", "-c", path2)
-	server2.Stdout = log
-	server2.Stderr = log
-	if e = server2.Start(); e != nil {
-		t.Fatal(e)
-	}
-	defer func() { _ = server2.Process.Kill(); _ = server2.Wait() }()
-	waitForPort(v.Port)
-	var first M
-	for _, p := range proxies {
-		if p["name"] == "snell" {
-			first = p
-		}
-	}
-	exit := M{"name": "exit", "type": "snell", "server": "127.0.0.1", "port": v.Port, "psk": v.Password, "version": 6, "dialer-proxy": "snell"}
-	if _, e = request(M{"proxies": []any{first, exit}, "mode": "rule", "rules": []string{"MATCH,exit"}}); e != nil {
-		t.Fatalf("real two-hop dialer-proxy: %v", e)
+		t.Run("chain-matrix/"+name, func(t *testing.T) { run(t, config) })
 	}
 }
 
@@ -434,7 +438,7 @@ func TestTunnelExplicitDisable(t *testing.T) {
 func TestWebsiteListenerTransportCompatibility(t *testing.T) {
 	for _, item := range []struct {
 		first, second string
-		valid bool
+		valid         bool
 	}{{"direct", "cdn", true}, {"argo", "argo", true}, {"direct", "argo", false}, {"argo", "cdn", false}} {
 		t.Run(item.first+"-"+item.second, func(t *testing.T) {
 			s := fixture()
@@ -443,7 +447,9 @@ func TestWebsiteListenerTransportCompatibility(t *testing.T) {
 				{ID: "second", Domain: "two.example.com", Target: "127.0.0.1", TargetPort: 8080, Access: item.second, Port: 38443, PublicPort: 38443, EdgePort: 443},
 			}
 			err := s.Normalize()
-			if (err == nil) != item.valid { t.Fatalf("transport validation: %v", err) }
+			if (err == nil) != item.valid {
+				t.Fatalf("transport validation: %v", err)
+			}
 		})
 	}
 }

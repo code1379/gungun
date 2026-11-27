@@ -116,14 +116,6 @@ func (m *Manager) InstallCore(name string) (M, error) {
 		repo = "SagerNet/sing-box"
 		tag = "v1.14.4"
 		asset = "sing-box-1.14.4-linux-" + arch + ".tar.gz"
-	case "mihomo":
-		repo = "MetaCubeX/mihomo"
-		tag = "v1.19.34"
-		flavor := arch
-		if arch == "amd64" {
-			flavor = "amd64-compatible"
-		}
-		asset = "mihomo-linux-" + flavor + "-v1.19.34.gz"
 	case "cloudflared":
 		repo = "cloudflare/cloudflared"
 		tag = "2026.11.2"
@@ -151,9 +143,6 @@ func (m *Manager) InstallCore(name string) (M, error) {
 	versionArg := "version"
 	if name == "cloudflared" {
 		versionArg = "--version"
-	}
-	if name == "mihomo" {
-		versionArg = "-v"
 	}
 	rollback := func(cause error) (M, error) {
 		var undo error

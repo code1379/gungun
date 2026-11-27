@@ -11,11 +11,12 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "node --import tsx tests/core-integration.ts",
-    "test:go": "cd fq && go test -race ./...",
+    "test:go": "node scripts/test-go.mjs",
     "fq:build": "node scripts/build-fq.mjs",
     "cores:download": "node scripts/download-cores.mjs",
     "package:mac": "pnpm --filter @gungun/desktop package:mac",
-    "test:desktop": "node tests/desktop-smoke.mjs"
+    "test:desktop": "node tests/desktop-smoke.mjs",
+    "prepare:dev": "node scripts/prepare-dev.mjs"
   },
   "dependencies": {
     "yaml": "^2.8.1",

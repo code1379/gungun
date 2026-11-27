@@ -1,10 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { ensureGo } from "./ensure-go.mjs";
+
+const go = await ensureGo();
 mkdirSync("resources/bin", { recursive: true });
 for (const arch of ["amd64", "arm64"])
   execFileSync(
-    process.env.GO_BINARY || "go",
+    go,
     [
       "build",
       "-trimpath",

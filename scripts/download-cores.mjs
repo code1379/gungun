@@ -2,30 +2,30 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile, mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gunzipSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 const platform = process.env.CORE_PLATFORM || process.platform;
 const arch =
   (process.env.BUILD_ARCH || process.arch) === "x64"
     ? "amd64"
     : process.env.BUILD_ARCH || process.arch;
-const version = "v1.19.34";
-const flavor = arch === "amd64" ? "amd64-compatible" : arch;
 const assets = [
   {
-    repo: "MetaCubeX/mihomo",
-    version,
-    name: `mihomo-${platform}-${flavor}-${version}.gz`,
-    output: `mihomo-${platform}-${arch}`,
-  },
-];
-if (process.env.WITH_SINGBOX === "1")
-  assets.push({
     repo: "SagerNet/sing-box",
     version: "v1.14.4",
     name: `sing-box-1.14.4-${platform}-${arch}.tar.gz`,
     output: `sing-box-${platform}-${arch}`,
+    executable: `sing-box-1.14.4-${platform}-${arch}/sing-box`,
+  },
+];
+if (process.env.WITH_CADDY === "1") {
+  assets.push({
+    repo: "caddyserver/caddy",
+    version: "v2.10.2",
+    name: `caddy_2.10.2_${platform}_${arch}.tar.gz`,
+    output: `caddy-${platform}-${arch}`,
+    executable: "caddy",
   });
+}
 const output = resolve("resources/bin");
 await mkdir(output, { recursive: true });
 for (const asset of assets) {
@@ -60,13 +60,11 @@ for (const asset of assets) {
     try {
       await writeFile(join(dir, "core.tar.gz"), bytes);
       execFileSync("tar", ["-xzf", join(dir, "core.tar.gz"), "-C", dir]);
-      executable = await readFile(
-        join(dir, `sing-box-1.14.4-${platform}-${arch}`, "sing-box"),
-      );
+      executable = await readFile(join(dir, asset.executable));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  } else executable = gunzipSync(bytes);
+  } else throw new Error("Unsupported core archive");
   await writeFile(join(output, asset.output), executable, { mode: 0o755 });
   console.log(`Verified ${asset.name}: ${entry.digest}`);
 }

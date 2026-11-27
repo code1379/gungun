@@ -1,18 +1,8 @@
 import { useState } from "react";
 import { Plus, Globe, Shield, RefreshCw, DatabaseBackup } from "lucide-react";
-import type { RemoteState, Website } from "@gungun/domain";
+import { RemoteState, Website } from "@gungun/domain";
 import { useApp } from "../api";
-import {
-  Badge,
-  Button,
-  Confirm,
-  Empty,
-  Field,
-  Modal,
-  PageHeader,
-  pretty,
-  protocolLabels,
-} from "../components/ui";
+import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, protocolLabels, Select, Input } from "../components/ui";
 export default function Network() {
   const { data, call, run } = useApp();
   const [vpsId, setVpsId] = useState("");
@@ -42,11 +32,11 @@ export default function Network() {
         description="管理远程协议、网站、WARP 与配置备份。"
         actions={
           <>
-            <select
+            <Select
               className="inline-select"
               value={vpsId}
-              onChange={(e) => {
-                const id = e.target.value;
+              onValueChange={(value) => {
+                const id = value;
                 setVpsId(id);
                 setRemote(null);
                 setOutput(null);
@@ -60,7 +50,7 @@ export default function Network() {
                   {v.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button
               disabled={!vpsId}
               onClick={() => {
@@ -282,10 +272,10 @@ export default function Network() {
                   >
                     读取备份
                   </Button>
-                  <select
+                  <Select
                     className="inline-select"
                     value={backupId}
-                    onChange={(e) => setBackupId(e.target.value)}
+                    onValueChange={(value) => setBackupId(value)}
                   >
                     <option value="">选择备份</option>
                     {backups.map((b) => (
@@ -293,7 +283,7 @@ export default function Network() {
                         {b}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <Button
                     disabled={!backupId}
                     onClick={() => {
@@ -360,7 +350,7 @@ export default function Network() {
           >
             <div className="form-grid">
               <Field label="网站域名">
-                <input
+                <Input
                   required
                   value={website.domain}
                   onChange={(e) =>
@@ -369,10 +359,10 @@ export default function Network() {
                 />
               </Field>
               <Field label="接入方式">
-                <select
+                <Select
                   value={website.access}
-                  onChange={(e) => {
-                    const access = e.target.value as Website["access"];
+                  onValueChange={(value) => {
+                    const access = value as Website["access"];
                     setWebsite({
                       ...website,
                       access,
@@ -383,10 +373,10 @@ export default function Network() {
                   <option value="direct">公网 IP / 已有端口映射</option>
                   <option value="cdn">Cloudflare CDN</option>
                   <option value="argo">Argo Tunnel</option>
-                </select>
+                </Select>
               </Field>
               <Field label="目标 IP / 主机名">
-                <input
+                <Input
                   required
                   value={website.target}
                   onChange={(e) =>
@@ -395,7 +385,7 @@ export default function Network() {
                 />
               </Field>
               <Field label="目标端口">
-                <input
+                <Input
                   required
                   type="number"
                   min={1}
@@ -410,21 +400,20 @@ export default function Network() {
                 />
               </Field>
               <Field label="回源协议">
-                <select
+                <Select
                   value={website.upstreamTLS ? "https" : "http"}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     setWebsite({
                       ...website,
-                      upstreamTLS: e.target.value === "https",
-                    })
-                  }
+                      upstreamTLS: value === "https",
+                    })}
                 >
                   <option value="http">HTTP</option>
                   <option value="https">HTTPS（验证上游证书）</option>
-                </select>
+                </Select>
               </Field>
               <Field label="Caddy 内部监听端口">
-                <input
+                <Input
                   required
                   type="number"
                   min={1}
@@ -439,7 +428,7 @@ export default function Network() {
                 <Field
                   label={vps?.kind === "nat" ? "公网映射端口" : "公网端口"}
                 >
-                  <input
+                  <Input
                     required
                     type="number"
                     min={1}
@@ -456,21 +445,20 @@ export default function Network() {
               )}
               {website.access === "cdn" && (
                 <Field label="Edge HTTPS 端口">
-                  <select
+                  <Select
                     value={website.edgePort}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       setWebsite({
                         ...website,
-                        edgePort: Number(e.target.value),
-                      })
-                    }
+                        edgePort: Number(value),
+                      })}
                   >
                     {[443, 2053, 2083, 2087, 2096, 8443].map((p) => (
                       <option key={p} value={p}>
                         {p}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
               )}
             </div>
@@ -485,3 +473,4 @@ export default function Network() {
     </>
   );
 }
+

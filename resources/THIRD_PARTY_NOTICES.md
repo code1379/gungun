@@ -2,10 +2,10 @@
 
 Gungun packages the following upstream binary for proxy connection testing and chain execution:
 
-- Mihomo v1.19.34 — https://github.com/MetaCubeX/mihomo/tree/v1.19.34
+- sing-box v1.14.4 — https://github.com/SagerNet/sing-box/tree/v1.14.4
   - License: GNU General Public License v3.0
-  - License text: https://github.com/MetaCubeX/mihomo/blob/v1.19.34/LICENSE
-  - Corresponding source: https://github.com/MetaCubeX/mihomo/archive/refs/tags/v1.19.34.tar.gz
+  - License text: https://github.com/SagerNet/sing-box/blob/v1.14.4/LICENSE
+  - Corresponding source: https://github.com/SagerNet/sing-box/archive/refs/tags/v1.14.4.tar.gz
   - Gungun does not modify this upstream binary. Download integrity is checked against the upstream release asset SHA256 digest.
 
 Electron and JavaScript dependency notices are retained in their packaged distributions.
@@ -14,7 +14,7 @@ fq can download official sing-box, Caddy and cloudflared releases on the user's 
 
 ## shadcn/ui Base UI source components
 
-The desktop button is adapted from shadcn/ui's Base UI registry and retains Gungun's visual tokens. Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/registry/bases/base/ui/button.tsx
+The desktop uses button, input, textarea, label, select, checkbox, dialog, badge, table, tabs, progress, separator, card and alert-dialog sources adapted from shadcn/ui's Base UI registry (base-nova), styled with Tailwind CSS and Gungun semantic theme tokens. Source: https://github.com/shadcn-ui/ui/blob/main/apps/v4/registry/bases/base/ui/button.tsx
 
 MIT License
 
@@ -37,3 +37,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+

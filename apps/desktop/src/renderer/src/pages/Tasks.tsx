@@ -1,5 +1,5 @@
 import { useApp } from "../api";
-import { Badge, Button, Empty, ErrorView, PageHeader } from "../components/ui";
+import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
 const labels = {
   queued: "排队中",
   running: "执行中",
@@ -40,7 +40,7 @@ export default function Tasks() {
                   {labels[t.state]}
                 </Badge>
               </div>
-              <progress value={t.progress} max={100} aria-label="任务进度" />
+              <Progress value={t.progress} max={100} aria-label="任务进度" />
               <div className="task-steps">
                 {t.steps.map((step, i) => (
                   <div key={i} className={`task-step step-${step.state}`}>
@@ -78,3 +78,4 @@ export default function Tasks() {
     </>
   );
 }
+

@@ -1,7 +1,14 @@
 import { useState } from "react";
-import type { Settings as SettingsType } from "@gungun/domain";
+import { Settings as SettingsType } from "@gungun/domain";
 import { useApp } from "../api";
-import { Button, Field, PageHeader, pretty } from "../components/ui";
+import {
+  Button,
+  Field,
+  PageHeader,
+  pretty,
+  Select,
+  Input,
+} from "../components/ui";
 export default function Settings() {
   const { data, call, run } = useApp();
   const [draft, setDraft] = useState<SettingsType | null>(null);
@@ -28,6 +35,26 @@ export default function Settings() {
         }}
       >
         <section className="section settings-section">
+          <h2>外观</h2>
+          <div className="form-grid">
+            <Field
+              label="应用主题"
+              hint="保存后同步到主窗口、终端、日志和任务窗口。跟随系统时自动响应 macOS 外观变化。"
+            >
+              <Select
+                value={values.theme}
+                onValueChange={(value) =>
+                  update("theme", value as SettingsType["theme"])
+                }
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </Select>
+            </Field>
+          </div>
+        </section>
+        <section className="section settings-section">
           <h2>Cloudflare</h2>
           <p>
             使用 Global API Key 读取 Zone、管理 DNS、Tunnel 与回源规则。Key
@@ -35,7 +62,7 @@ export default function Settings() {
           </p>
           <div className="form-grid">
             <Field label="Cloudflare 邮箱">
-              <input
+              <Input
                 type="email"
                 value={values.cloudflareEmail}
                 autoComplete="off"
@@ -43,7 +70,7 @@ export default function Settings() {
               />
             </Field>
             <Field label="Global API Key">
-              <input
+              <Input
                 type="password"
                 value={values.cloudflareKey}
                 autoComplete="off"
@@ -54,7 +81,7 @@ export default function Settings() {
               label="Let's Encrypt 邮箱"
               hint="申请与续期证书时接受 Let's Encrypt 服务条款。"
             >
-              <input
+              <Input
                 type="email"
                 value={values.acmeEmail}
                 onChange={(e) => update("acmeEmail", e.target.value)}
@@ -77,7 +104,7 @@ export default function Settings() {
           <h2>测速</h2>
           <div className="form-grid">
             <Field label="全局最大并发">
-              <input
+              <Input
                 type="number"
                 min={1}
                 max={50}
@@ -86,7 +113,7 @@ export default function Settings() {
               />
             </Field>
             <Field label="请求超时（毫秒）">
-              <input
+              <Input
                 type="number"
                 min={3000}
                 max={120000}
@@ -95,21 +122,21 @@ export default function Settings() {
               />
             </Field>
             <Field label="真连接延迟 URL">
-              <input
+              <Input
                 type="url"
                 value={values.latencyUrl}
                 onChange={(e) => update("latencyUrl", e.target.value)}
               />
             </Field>
             <Field label="下载测速 URL">
-              <input
+              <Input
                 type="url"
                 value={values.downloadUrl}
                 onChange={(e) => update("downloadUrl", e.target.value)}
               />
             </Field>
             <Field label="下载数据量（字节）">
-              <input
+              <Input
                 type="number"
                 min={100000}
                 max={100000000}
@@ -124,7 +151,7 @@ export default function Settings() {
         <section className="section settings-section">
           <h2>SSH 与 Tailscale</h2>
           <Field label="默认 SSH 私钥">
-            <input
+            <Input
               value={values.sshKeyPath}
               onChange={(e) => update("sshKeyPath", e.target.value)}
             />

@@ -1,39 +1,10 @@
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { useState } from "react";
 import { randomUUID } from "../utils";
-import {
-  Plus,
-  MoreHorizontal,
-  ArrowUp,
-  ArrowDown,
-  Download,
-  Upload,
-  RefreshCw,
-  Gauge,
-  Activity,
-  Workflow,
-  Search,
-  Pencil,
-  Trash2,
-} from "lucide-react";
-import {
-  nodeSchema,
-  resolveTag,
-  type Chain,
-  type ProxyNode,
-  type Tag,
-  type TestResult,
-} from "@gungun/domain";
+import { Plus, MoreHorizontal, ArrowUp, ArrowDown, Download, Upload, RefreshCw, Gauge, Activity, Workflow, Search, Pencil, Trash2 } from "lucide-react";
+import { nodeSchema, resolveTag, type Chain, type ProxyNode, type Tag, type TestResult } from "@gungun/domain";
 import { useApp } from "../api";
-import {
-  Badge,
-  Button,
-  Confirm,
-  Empty,
-  Field,
-  Modal,
-  PageHeader,
-  protocolLabels,
-} from "../components/ui";
+import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, protocolLabels, Checkbox, Select, Input, Table, TableHeader, TableRow, TableHead, TableBody, TableCell, Textarea } from "../components/ui";
 type Candidate = {
   address: string;
   latencyMs: number | null;
@@ -123,7 +94,7 @@ export default function Nodes() {
   const optResults = (data.tasks.find((t) => t.id === optTask)?.output ||
     []) as Candidate[];
   return (
-    <>
+    <Tabs value={tagId} onValueChange={(value) => { setTagId(String(value)); setSelected(""); }} className="gap-0">
       <PageHeader
         title="节点与订阅"
         description="统一管理节点、动态聚合和链式代理。VPS 节点通过 SSH 手动同步。"
@@ -161,22 +132,13 @@ export default function Nodes() {
           </>
         }
       />
-      <div className="tag-bar" role="tablist" aria-label="节点分组">
+      <TabsList variant="line" className="mb-4 h-10 max-w-full justify-start overflow-x-auto rounded-none border-b border-border p-0" aria-label="节点分组">
         {[
           { id: "all", name: "所有节点" },
           { id: "chains", name: "链式代理" },
           ...data.tags,
         ].map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={tagId === t.id}
-            className={`tag-tab ${tagId === t.id ? "active" : ""}`}
-            onClick={() => {
-              setTagId(t.id);
-              setSelected("");
-            }}
-          >
+          <TabsTrigger key={t.id} value={t.id} className="h-9 flex-none gap-2 px-3 data-active:text-primary after:bg-primary">
             {t.id === "chains" && <Workflow size={14} />}
             <span>{t.name}</span>
             <small>
@@ -192,9 +154,10 @@ export default function Nodes() {
                       }
                     })()}
             </small>
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
+      <TabsContent value={tagId}>
       <div className="test-toolbar">
         <div className="actions">
           <Button
@@ -224,26 +187,25 @@ export default function Nodes() {
         <span className="muted">测试主机</span>
         {[{ id: "local", name: "Mac 本机" }, ...data.vps].map((v) => (
           <label className="checkbox compact" key={v.id}>
-            <input
-              type="checkbox"
+            <Checkbox
+              
               checked={sourceIds.includes(v.id)}
-              onChange={(e) =>
+              onCheckedChange={(checked) =>
                 setSourceIds((old) =>
-                  e.target.checked
+                  checked
                     ? [...old, v.id]
                     : old.filter((id) => id !== v.id),
-                )
-              }
+                )}
             />
             {v.name}
           </label>
         ))}
         <span className="grow" />
         <span className="muted">显示来源</span>
-        <select
+        <Select
           className="inline-select"
           value={displaySource}
-          onChange={(e) => setDisplaySource(e.target.value)}
+          onValueChange={(value) => setDisplaySource(value)}
         >
           <option value="local">Mac 本机</option>
           {data.vps.map((v) => (
@@ -251,28 +213,28 @@ export default function Nodes() {
               {v.name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className="toolbar">
         <div className="search">
           <Search size={16} />
-          <input
+          <Input
             aria-label="搜索节点"
             value={search}
             placeholder="搜索节点"
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select
+        <Select
           className="inline-select"
           value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
+          onValueChange={(value) => setSort(value as typeof sort)}
           aria-label="排序"
         >
           <option value="name">按名称</option>
           <option value="latency">延迟从低到高</option>
           <option value="speed">速度从高到低</option>
-        </select>
+        </Select>
         <span className="grow" />
         {currentTag?.kind === "subscription" && (
           <Button
@@ -325,23 +287,24 @@ export default function Nodes() {
       </div>
       {visible.length ? (
         <div className="table-wrap">
-          <table className="node-table">
-            <thead>
-              <tr>
-                <th>节点名称</th>
-                <th>{isChain ? "连接顺序" : "协议 / 地址"}</th>
-                <th>真连接延迟</th>
-                <th>下载速度</th>
-                <th aria-label="操作" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="node-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>节点名称</TableHead>
+                <TableHead>{isChain ? "连接顺序" : "协议 / 地址"}</TableHead>
+                <TableHead>真连接延迟</TableHead>
+                <TableHead>下载速度</TableHead>
+                <TableHead aria-label="操作" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {visible.map((n) => {
                 const r = result(n.id);
                 return (
-                  <tr
+                  <TableRow
                     key={n.id}
-                    className={selected === n.id ? "selected" : ""}
+                    data-state={selected === n.id ? "selected" : undefined}
+                    className={selected === n.id ? "bg-primary/10" : ""}
                     onClick={() => setSelected(n.id)}
                     onDoubleClick={() => setDetails(n.id)}
                     onContextMenu={(e) => {
@@ -354,7 +317,7 @@ export default function Nodes() {
                       });
                     }}
                   >
-                    <td>
+                    <TableCell>
                       <strong>{n.name}</strong>
                       {"nodeIds" in n ? (
                         <Badge tone="blue">{n.nodeIds.length} 跳</Badge>
@@ -363,8 +326,8 @@ export default function Nodes() {
                           <Badge>{n.access.toUpperCase()}</Badge>
                         )
                       )}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {"nodeIds" in n ? (
                         <span className="muted">
                           {n.nodeIds
@@ -383,8 +346,8 @@ export default function Nodes() {
                           </small>
                         </>
                       )}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {r?.error ? (
                         <span className="error-text" title={r.error}>
                           失败
@@ -396,15 +359,15 @@ export default function Nodes() {
                       ) : (
                         <span className="muted">未测试</span>
                       )}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {r?.speedMBps != null ? (
                         `${r.speedMBps.toFixed(2)} MB/s`
                       ) : (
                         <span className="muted">—</span>
                       )}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       <Button
                         variant="ghost"
                         aria-label={`${n.name} 的操作`}
@@ -422,12 +385,12 @@ export default function Nodes() {
                       >
                         <MoreHorizontal size={18} />
                       </Button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
         <Empty title={isChain ? "创建第一条代理链" : "这个分组还没有节点"}>
@@ -521,7 +484,7 @@ export default function Nodes() {
             }}
           >
             <Field label="链路名称">
-              <input
+              <Input
                 required
                 value={chain.name}
                 onChange={(e) => setChain({ ...chain, name: e.target.value })}
@@ -539,17 +502,16 @@ export default function Nodes() {
                         : `第 ${i + 1} 跳`
                   }
                 >
-                  <select
+                  <Select
                     required
                     value={id}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       setChain({
                         ...chain,
                         nodeIds: chain.nodeIds.map((n, j) =>
-                          j === i ? e.target.value : n,
+                          j === i ? value : n,
                         ),
-                      })
-                    }
+                      })}
                   >
                     <option value="">选择节点</option>
                     {data.nodes.map((n) => (
@@ -561,7 +523,7 @@ export default function Nodes() {
                         {n.name} · {protocolLabels[n.protocol]}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
                 <Button
                   type="button"
@@ -605,7 +567,7 @@ export default function Nodes() {
             ))}
             <p className="hint">
               后续跳暂不支持 Hysteria2 / TUIC 的 UDP 拨号。请使用 VLESS、AnyTLS
-              或 Snell 出口。保存后请测试完整链路。
+              或 Snell 出口。QUIC 第一跳后仅支持 AnyTLS / Snell：当前核心 QUIC → VLESS 实测下载不稳定。保存后请测试完整链路。
             </p>
             <div className="form-actions">
               <Button
@@ -673,7 +635,7 @@ export default function Nodes() {
                 })
                 .map((f) => (
                   <Field key={f.key} label={f.label}>
-                    <input
+                    <Input
                       type={"type" in f ? f.type : "text"}
                       required={["name", "address", "port"].includes(f.key)}
                       value={editing[f.key]}
@@ -690,70 +652,67 @@ export default function Nodes() {
                   </Field>
                 ))}
               <Field label="协议">
-                <select
+                <Select
                   value={editing.protocol}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     setEditing({
                       ...editing,
-                      protocol: e.target.value as ProxyNode["protocol"],
+                      protocol: value as ProxyNode["protocol"],
                       access:
-                        e.target.value === "vless-ws"
+                        value === "vless-ws"
                           ? editing.access
                           : "direct",
-                    })
-                  }
+                    })}
                 >
                   {Object.entries(protocolLabels).map(([id, label]) => (
                     <option key={id} value={id}>
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
               {editing.protocol === "vless-ws" && (
                 <Field
                   label="接入方式"
                   hint="外部 CDN / Argo 节点可标记后使用优选 IP。"
                 >
-                  <select
+                  <Select
                     value={editing.access}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       setEditing({
                         ...editing,
-                        access: e.target.value as ProxyNode["access"],
-                      })
-                    }
+                        access: value as ProxyNode["access"],
+                      })}
                   >
                     <option value="direct">直连</option>
                     <option value="cdn">Cloudflare CDN</option>
                     <option value="argo">Argo Tunnel</option>
-                  </select>
+                  </Select>
                 </Field>
               )}
               {editing.protocol === "snell" ? (
                 <Field label="Snell v6 模式">
-                  <select
+                  <Select
                     value={editing.snellMode}
-                    onChange={(e) =>
+                    onValueChange={(value) =>
                       setEditing({
                         ...editing,
-                        snellMode: e.target.value as ProxyNode["snellMode"],
-                      })
-                    }
+                        snellMode: value as ProxyNode["snellMode"],
+                      })}
                   >
                     {["default", "unshaped", "unsafe-raw"].map((mode) => (
                       <option key={mode} value={mode}>
                         {mode}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
               ) : (
                 <Field
                   label="ALPN"
                   hint="多个值用逗号分隔，留空使用协议默认值。"
                 >
-                  <input
+                  <Input
                     value={editing.alpn.join(",")}
                     onChange={(e) =>
                       setEditing({
@@ -770,9 +729,9 @@ export default function Nodes() {
               {!["snell", "vless-reality"].includes(editing.protocol) && (
                 <Field
                   label="证书 SHA256 固定指纹"
-                  hint="可选，支持带冒号的十六进制指纹。"
+                  hint="仅用于保留导入和导出参数；sing-box 不支持整张证书指纹，填写后无法执行测试。请使用可信证书。"
                 >
-                  <input
+                  <Input
                     value={editing.certificatePin}
                     onChange={(e) =>
                       setEditing({ ...editing, certificatePin: e.target.value })
@@ -783,22 +742,21 @@ export default function Nodes() {
               {editing.protocol === "hysteria2" && (
                 <>
                   <Field label="Hysteria2 混淆">
-                    <select
+                    <Select
                       value={editing.obfs}
-                      onChange={(e) =>
+                      onValueChange={(value) =>
                         setEditing({
                           ...editing,
-                          obfs: e.target.value as ProxyNode["obfs"],
-                        })
-                      }
+                          obfs: value as ProxyNode["obfs"],
+                        })}
                     >
                       <option value="">无</option>
                       <option value="salamander">Salamander</option>
-                    </select>
+                    </Select>
                   </Field>
                   {editing.obfs && (
                     <Field label="混淆密码">
-                      <input
+                      <Input
                         type="password"
                         required
                         value={editing.obfsPassword}
@@ -814,11 +772,10 @@ export default function Nodes() {
                 </>
               )}
               <Field label="所属 Tag">
-                <select
+                <Select
                   value={editing.tagId}
-                  onChange={(e) =>
-                    setEditing({ ...editing, tagId: e.target.value })
-                  }
+                  onValueChange={(value) =>
+                    setEditing({ ...editing, tagId: value })}
                 >
                   {data.tags
                     .filter((t) => t.kind !== "aggregate")
@@ -827,28 +784,26 @@ export default function Nodes() {
                         {t.name}
                       </option>
                     ))}
-                </select>
+                </Select>
               </Field>
               <Field label="TLS">
                 <label className="checkbox">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    
                     checked={editing.tls}
-                    onChange={(e) =>
-                      setEditing({ ...editing, tls: e.target.checked })
-                    }
+                    onCheckedChange={(checked) =>
+                      setEditing({ ...editing, tls: checked })}
                   />
                   启用 TLS
                 </label>
               </Field>
               <Field label="证书校验">
                 <label className="checkbox">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    
                     checked={editing.insecure}
-                    onChange={(e) =>
-                      setEditing({ ...editing, insecure: e.target.checked })
-                    }
+                    onCheckedChange={(checked) =>
+                      setEditing({ ...editing, insecure: checked })}
                   />
                   跳过证书校验
                 </label>
@@ -875,27 +830,26 @@ export default function Nodes() {
             }}
           >
             <Field label="名称">
-              <input
+              <Input
                 required
                 value={tag.name}
                 onChange={(e) => setTag({ ...tag, name: e.target.value })}
               />
             </Field>
             <Field label="类型">
-              <select
+              <Select
                 value={tag.kind}
-                onChange={(e) =>
-                  setTag({ ...tag, kind: e.target.value as Tag["kind"] })
-                }
+                onValueChange={(value) =>
+                  setTag({ ...tag, kind: value as Tag["kind"] })}
               >
                 <option value="manual">手动分组</option>
                 <option value="subscription">外部订阅</option>
                 <option value="aggregate">动态聚合</option>
-              </select>
+              </Select>
             </Field>
             {tag.kind === "subscription" && (
               <Field label="订阅 URL">
-                <input
+                <Input
                   type="url"
                   required
                   value={tag.url}
@@ -912,17 +866,16 @@ export default function Nodes() {
                   .filter((t) => t.id !== tag.id)
                   .map((t) => (
                     <label className="checkbox" key={t.id}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
+                        
                         checked={tag.tagIds.includes(t.id)}
-                        onChange={(e) =>
+                        onCheckedChange={(checked) =>
                           setTag({
                             ...tag,
-                            tagIds: e.target.checked
+                            tagIds: checked
                               ? [...tag.tagIds, t.id]
                               : tag.tagIds.filter((id) => id !== t.id),
-                          })
-                        }
+                          })}
                       />
                       {t.name}
                     </label>
@@ -991,7 +944,7 @@ export default function Nodes() {
             }}
           >
             <Field label="节点内容">
-              <textarea
+              <Textarea
                 required
                 rows={10}
                 value={importText}
@@ -1111,7 +1064,7 @@ export default function Nodes() {
         {optimizing && (
           <>
             <Field label="候选地址，每行一个">
-              <textarea
+              <Textarea
                 rows={6}
                 value={addresses}
                 onChange={(e) => setAddresses(e.target.value)}
@@ -1191,6 +1144,8 @@ export default function Nodes() {
           </>
         )}
       </Modal>
-    </>
+      </TabsContent>
+    </Tabs>
   );
 }
+

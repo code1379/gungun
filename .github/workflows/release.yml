@@ -1,8 +1,5 @@
 name: Release
 on:
-  push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
-  workflow_dispatch:
   workflow_call:
     inputs:
       release_tag:
@@ -25,23 +22,22 @@ jobs:
     timeout-minutes: 25
     permissions: { contents: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha || github.sha }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: 1.25.4, cache: false }
       - run: pnpm install --frozen-lockfile
       - run: mkdir -p test-results && pnpm lint && pnpm typecheck && pnpm test | tee test-results/unit.txt
       - run: pnpm cores:download
-        env: { WITH_SINGBOX: "1", GH_TOKEN: "${{ github.token }}" }
+        env: { GH_TOKEN: "${{ github.token }}", WITH_CADDY: "1" }
       - working-directory: fq
         run: go test -race -v ./... | tee ../test-results/go.txt
         env:
           SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
-          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
       - run: pnpm test:integration | tee test-results/chain.txt
       - run: pnpm fq:build
         env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
@@ -57,29 +53,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        with:
-          name: manual-test-fq
-          path: |
-            resources/bin/fq-linux-*
-            test-results/
-          retention-days: 1
-          if-no-files-found: error
   macos:
     needs: verify
     runs-on: macos-15
     timeout-minutes: 40
     permissions: { contents: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha || github.sha }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: 1.25.4, cache: false }
       - run: pnpm install --frozen-lockfile
       - name: Set final application version
@@ -113,23 +99,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        with:
-          name: manual-test-macos-arm64
-          path: |
-            release/*.dmg
-            test-results/
-          retention-days: 1
-          if-no-files-found: error
   publish:
     if: github.event_name != 'workflow_dispatch'
     needs: [verify, macos]
     runs-on: ubuntu-24.04
     permissions: { contents: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_sha || github.sha }}
       - name: Validate all final assets and publish together
@@ -152,3 +128,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
+
+

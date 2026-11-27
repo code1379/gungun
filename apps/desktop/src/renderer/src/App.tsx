@@ -46,8 +46,10 @@ export default function App() {
     data?.tasks.filter((t) => ["queued", "running"].includes(t.state)).length ||
     0;
   return (
-    <div className={`shell ${collapsed ? "collapsed" : ""}`}>
-      <aside className="sidebar">
+    <div
+      className={`shell grid h-screen grid-rows-[minmax(0,1fr)] overflow-hidden text-foreground ${collapsed ? "collapsed grid-cols-[72px_1fr]" : "grid-cols-[220px_1fr]"}`}
+    >
+      <aside className="sidebar flex min-h-0 w-full flex-col overflow-hidden border-r border-border bg-sidebar text-sidebar-foreground">
         <div className="window-drag" />
         <div className="brand">
           <div className="brand-symbol">g</div>
@@ -60,10 +62,11 @@ export default function App() {
         </div>
         <nav aria-label="主导航">
           {navigation.map((item) => (
-            <button
+            <Button
+              variant="ghost"
               key={item.id}
               title={collapsed ? item.label : undefined}
-              className={`nav-item ${page === item.id ? "active" : ""}`}
+              className={`nav-item justify-start ${page === item.id ? "active" : ""}`}
               onClick={() => setPage(item.id)}
             >
               <item.icon size={18} />
@@ -71,7 +74,7 @@ export default function App() {
               {item.id === "tasks" && running > 0 && (
                 <small className="nav-count">{running}</small>
               )}
-            </button>
+            </Button>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -79,7 +82,7 @@ export default function App() {
             <div className="local-status">
               <span className="status-dot" />
               <span>本机工作区</span>
-              <small>{data ? "已连接" : "连接中"}</small>
+              <small>{data ? "已就绪" : "载入中"}</small>
             </div>
           )}
           <Button
@@ -95,7 +98,7 @@ export default function App() {
           </Button>
         </div>
       </aside>
-      <main className="workspace">
+      <main className="workspace flex min-h-0 min-w-0 flex-col bg-background">
         <div className="topbar window-drag">
           <span>{navigation.find((n) => n.id === page)?.label}</span>
           <span className="grow" />
@@ -103,7 +106,7 @@ export default function App() {
             {running ? `${running} 个任务进行中` : "本地管理 · SSH 同步"}
           </span>
         </div>
-        <div className="page-content">
+        <div className="page-content flex-1 overflow-auto px-7 py-7">
           {page === "dashboard" && <Dashboard navigate={setPage} />}
           {page === "vps" && <Vps />}
           {page === "deploy" && <Deploy />}
