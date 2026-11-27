@@ -26,21 +26,19 @@ export default function Settings() {
   const [result, setResult] = useState<unknown>(null);
   const [keyStatus, setKeyStatus] = useState<SSHKeyStatus | null>(null);
   const [rotationCandidate, setRotationCandidate] = useState<SSHKeyCandidate | null>(null);
-  const values = draft || data?.settings;
   useEffect(() => {
     let active = true;
-    if (data) {
-      void call<SSHKeyStatus>("sshKeyStatus")
-        .then((status) => {
-          if (active) setKeyStatus(status);
-        })
-        .catch(() => {});
-    }
+    void call<SSHKeyStatus>("sshKeyStatus")
+      .then((status) => {
+        if (active) setKeyStatus(status);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
-  }, [call, data]);
+  }, [call]);
   if (!data) return null;
+  const values = draft || data.settings;
   const update = <K extends keyof SettingsType>(
     key: K,
     value: SettingsType[K],
