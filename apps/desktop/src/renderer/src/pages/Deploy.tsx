@@ -407,6 +407,36 @@ export default function Deploy() {
                         {protocol === "vless-reality" && <Field label="Reality 握手目标"><Input required value={config.realityServer} onChange={(e) => updateService(protocol, "realityServer", e.target.value)} /></Field>}
                         {protocol === "vless-reality" && <Field label="Reality 握手端口"><Input type="number" min={1} max={65535} value={config.realityPort} onChange={(e) => updateService(protocol, "realityPort", Number(e.target.value))} /></Field>}
                       </div>
+                      {protocol === "vless-ws" && (
+                        <section className="access-mode-panel">
+                          <div className="section-heading">
+                            <div>
+                              <h3>接入方式</h3>
+                              <p>可同时选择一种或多种入口；每个入口分别配置监听端口、NAT 映射端口和域名。</p>
+                            </div>
+                            <Badge tone="blue">多选</Badge>
+                          </div>
+                          <div className="access-mode-options">
+                            {(["direct", "cdn", "argo"] as const).map((access) => {
+                              const checked = accessModes.includes(access);
+                              const label = access === "direct" ? "直连" : access === "cdn" ? "Cloudflare CDN" : "Argo Tunnel";
+                              return (
+                                <label key={access} className={"access-mode-choice " + (checked ? "active" : "")}>
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(nextChecked) => setAccessModes((current) =>
+                                      nextChecked
+                                        ? current.includes(access) ? current : [...current, access]
+                                        : current.filter((item) => item !== access),
+                                    )}
+                                  />
+                                  <span>{label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      )}
                       <div className="service-access-config-list">
                         {accesses.map((access) => {
                           const key = [protocol, access].join(":");
@@ -425,19 +455,20 @@ export default function Deploy() {
                                 <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={assignment.port} onChange={(e) => updatePort(protocol, access, "port", Number(e.target.value))} />
                               </Field>
                               {vps.kind === "nat" && access !== "argo" && <div className="port-override-option">
-                                <Checkbox
-                                  checked={assignment.separatePublicPort}
-                                  onCheckedChange={(checked) => setPortAssignments((current) => ({
-                                    ...current,
-                                    [key]: {
-                                      ...assignment,
-                                      separatePublicPort: checked,
-                                      publicPort: checked ? (assignment.publicPort || assignment.port) : assignment.publicPort,
-                                    },
-                                  }))}
-                                >
-                                  公网映射端口不同于内部监听端口
-                                </Checkbox>
+                                <label className="port-override-label">
+                                  <Checkbox
+                                    checked={assignment.separatePublicPort}
+                                    onCheckedChange={(checked) => setPortAssignments((current) => ({
+                                      ...current,
+                                      [key]: {
+                                        ...assignment,
+                                        separatePublicPort: checked,
+                                        publicPort: checked ? (assignment.publicPort || assignment.port) : assignment.publicPort,
+                                      },
+                                    }))}
+                                  />
+                                  <span>公网映射端口不同于内部监听端口</span>
+                                </label>
                                 {assignment.separatePublicPort && <Field label="公网映射端口" hint="例如内部 8880，公网映射 18880；默认值与内部端口相同。">
                                   <Input type="number" min={1} max={65535} value={assignment.publicPort || assignment.port} onChange={(e) => updatePort(protocol, access, "publicPort", Number(e.target.value))} />
                                 </Field>}
