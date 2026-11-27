@@ -16,6 +16,7 @@ type Service struct {
 	ID            string `json:"id"`
 	Protocol      string `json:"protocol"`
 	Port          int    `json:"port"`
+	BackendPort   int    `json:"backendPort,omitempty"`
 	PublicPort    int    `json:"publicPort"`
 	EdgeScheme    string `json:"edgeScheme,omitempty"`
 	EdgePort      int    `json:"edgePort"`
@@ -171,6 +172,45 @@ func (s *State) Normalize() error {
 					return errors.New("VLESS + WS access modes must share one public mapped port")
 				}
 			}
+			var previous *Service
+			for j := 0; j < i; j++ {
+				if s.Services[j].Protocol == "vless-ws" {
+					previous = &s.Services[j]
+					break
+				}
+			}
+			if previous != nil {
+				if v.BackendPort == 0 {
+					v.BackendPort = previous.BackendPort
+				}
+				if v.BackendPort != previous.BackendPort {
+					return errors.New("VLESS + WS access modes must share one loopback backend port")
+				}
+				if v.UUID == "" {
+					v.UUID = previous.UUID
+				} else if previous.UUID != "" && v.UUID != previous.UUID {
+					return errors.New("VLESS + WS access modes must share one UUID")
+				}
+				if v.Path == "" {
+					v.Path = previous.Path
+				} else if previous.Path != "" && v.Path != previous.Path {
+					return errors.New("VLESS + WS access modes must share one WebSocket path")
+				}
+				if v.Egress != previous.Egress {
+					return errors.New("VLESS + WS access modes must share one protocol outbound")
+				}
+			}
+			if v.BackendPort == 0 {
+				v.BackendPort = allocate(used, "tcp")
+			}
+			if !ValidPort(v.BackendPort) {
+				return errors.New("unable to allocate VLESS + WS loopback backend port")
+			}
+			backendKey := listenerKey("tcp", v.BackendPort)
+			if used[backendKey] != "" && !strings.HasPrefix(used[backendKey], "vless-ws-backend:") {
+				return fmt.Errorf("VLESS + WS backend port collision: %s", backendKey)
+			}
+			used[backendKey] = "vless-ws-backend:" + v.ID
 		}
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
@@ -202,6 +242,9 @@ func (s *State) Normalize() error {
 		}
 		if v.Access != "direct" && v.Domain == "" {
 			return errors.New("domain required for CDN/Argo")
+		}
+		if v.Protocol == "vless-ws" && v.Domain == "" {
+			return errors.New("VLESS + WS requires a domain for TLS and browser fallback")
 		}
 		if v.Password == "" {
 			v.Password = RandomSecret()

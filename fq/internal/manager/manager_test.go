@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"fmt"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -133,9 +134,20 @@ func TestVlessWSAccessModesShareOneInbound(t *testing.T) {
 	count := 0
 	for _, value := range inbounds {
 		in := value.(M)
-		if in["type"] == "vless" { count++; if in["listen_port"] != 45516 || in["tls"] == nil { t.Fatalf("unexpected shared VLESS inbound: %#v", in) } }
+		if in["type"] == "vless" {
+			count++
+			if in["listen"] != "127.0.0.1" || in["listen_port"] != s.Services[0].BackendPort || in["tls"] != nil {
+				t.Fatalf("unexpected loopback VLESS inbound: %#v", in)
+			}
+		}
 	}
 	if count != 1 { t.Fatalf("VLESS inbound count = %d, want 1", count) }
+	if s.Services[0].UUID == "" || s.Services[0].UUID != s.Services[1].UUID || s.Services[1].UUID != s.Services[2].UUID {
+		t.Fatal("VLESS WS access modes must share one generated UUID")
+	}
+	if s.Services[0].BackendPort == 0 || s.Services[0].BackendPort != s.Services[1].BackendPort || s.Services[1].BackendPort != s.Services[2].BackendPort {
+		t.Fatal("VLESS WS access modes must share one backend port")
+	}
 	s.Services[1].PublicPort = 18880
 	if err := s.Normalize(); err == nil { t.Fatal("VLESS WS CDN and direct must share one public mapping") }
 	nodes := Export(s)["nodes"].([]any)
@@ -184,8 +196,13 @@ func TestArgoExport(t *testing.T) {
 		t.Fatal(nodes)
 	}
 	in := SingBoxConfig(s, "/etc/gungun")["inbounds"].([]any)[0].(M)
-	if in["listen"] != "::" || in["tls"] == nil || in["listen_port"] != 20000 {
-		t.Fatal("Argo must reuse the shared TLS VLESS listener")
+	if in["listen"] != "127.0.0.1" || in["tls"] != nil || in["listen_port"] != s.Services[0].BackendPort {
+		t.Fatal("Argo VLESS must use the shared loopback HTTP backend behind Caddy")
+	}
+	caddy := CaddyConfig(s, "/etc/gungun")
+	server := caddy["apps"].(M)["http"].(M)["servers"].(M)["port_20000"].(M)
+	if server["listen"].([]string)[0] != "127.0.0.1:20000" {
+		t.Fatal("Argo-only Caddy listener must bind to loopback")
 	}
 }
 func TestApplyRollback(t *testing.T) {
@@ -642,5 +659,59 @@ func TestSharedCamouflagePortCannotCollide(t *testing.T) {
 	state.Camouflage = &CamouflageSite{Domain: "web-a7k2p.example.com", Port: 20002}
 	if err := state.Normalize(); err == nil {
 		t.Fatal("shared site port collision must be rejected")
+	}
+}
+
+
+func TestVlessWSNodeDomainUsesSharedCamouflageFallback(t *testing.T) {
+	state := fixture()
+	direct := service("vless-ws", 45516)
+	direct.Domain = "vless-ws-direct.a7k2p.example.com"
+	direct.PublicPort = 45516
+	argo := direct
+	argo.ID = "vless-ws-argo"
+	argo.Access = "argo"
+	argo.Domain = "vless-ws-argo.a7k2p.example.com"
+	argo.PublicPort = 0
+	state.Services = []Service{direct, argo}
+	if err := state.Normalize(); err != nil { t.Fatal(err) }
+
+	config := CaddyConfig(state, "/etc/gungun")
+	servers := config["apps"].(M)["http"].(M)["servers"].(M)
+	server := servers["port_45516"].(M)
+	if server["listen"].([]string)[0] != ":45516" {
+		t.Fatalf("direct + Argo shared listener must be publicly reachable: %#v", server["listen"])
+	}
+	routes := server["routes"].([]any)
+	if len(routes) != 4 { t.Fatalf("expected proxy + fallback routes for each domain, got %d", len(routes)) }
+	proxy := routes[0].(M)
+	match := proxy["match"].([]any)[0].(M)
+	if match["host"].([]string)[0] != direct.Domain || match["path"].([]string)[0] != "/gungun" {
+		t.Fatalf("WebSocket route must match the node host and path: %#v", match)
+	}
+	handler := proxy["handle"].([]any)[0].(M)
+	upstream := handler["upstreams"].([]any)[0].(M)
+	if upstream["dial"] != fmt.Sprintf("127.0.0.1:%d", state.Services[0].BackendPort) {
+		t.Fatalf("WebSocket route must target loopback sing-box backend: %#v", upstream)
+	}
+	fallback := routes[1].(M)["handle"].([]any)[0].(M)
+	if fallback["handler"] != "static_response" || fallback["status_code"] != 200 {
+		t.Fatalf("ordinary browser paths must return the shared static page: %#v", fallback)
+	}
+	if _, ok := config["apps"].(M)["tls"]; !ok { t.Fatal("Caddy must load the source certificate for node domains") }
+}
+
+func TestArgoOnlyVlessWSCaddyListenerIsLoopback(t *testing.T) {
+	state := fixture()
+	v := service("vless-ws", 45516)
+	v.Access = "argo"
+	v.Domain = "vless-ws-argo.a7k2p.example.com"
+	v.PublicPort = 0
+	state.Services = []Service{v}
+	if err := state.Normalize(); err != nil { t.Fatal(err) }
+	config := CaddyConfig(state, "/etc/gungun")
+	server := config["apps"].(M)["http"].(M)["servers"].(M)["port_45516"].(M)
+	if server["listen"].([]string)[0] != "127.0.0.1:45516" {
+		t.Fatalf("Argo-only listener must bind to loopback: %#v", server["listen"])
 	}
 }

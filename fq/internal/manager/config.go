@@ -18,7 +18,13 @@ func SingBoxConfig(s State, root string) M {
 		if v.Protocol == "vless-ws" { seenVlessWS = true }
 		typ := v.Protocol
 		if typ == "vless-ws" || typ == "vless-reality" { typ = "vless" }
-		in := M{"type": typ, "tag": v.ID, "listen": "::", "listen_port": v.Port}
+		listen := "::"
+		listenPort := v.Port
+		if v.Protocol == "vless-ws" {
+			listen = "127.0.0.1"
+			listenPort = v.BackendPort
+		}
+		in := M{"type": typ, "tag": v.ID, "listen": listen, "listen_port": listenPort}
 		tls := M{"enabled": true, "certificate_path": filepath.Join(root, "cert.pem"), "key_path": filepath.Join(root, "key.pem")}
 		switch v.Protocol {
 		case "hysteria2":
@@ -39,9 +45,8 @@ func SingBoxConfig(s State, root string) M {
 		case "vless-ws":
 			in["users"] = []any{M{"uuid": v.UUID}}
 			in["transport"] = M{"type": "ws", "path": v.Path}
-			// Keep TLS on the single shared listener. Argo and CDN both terminate
-			// the client-side TLS at their edge and use HTTPS to this origin.
-			in["tls"] = tls
+			// TLS and ordinary browser requests are handled by Caddy. sing-box
+			// only receives WebSocket traffic on this loopback-only HTTP port.
 		case "vless-reality":
 			in["users"] = []any{M{"uuid": v.UUID, "flow": "xtls-rprx-vision"}}
 			in["tls"] = M{"enabled": true, "server_name": v.RealityServer, "reality": M{"enabled": true, "handshake": M{"server": v.RealityServer, "server_port": v.RealityPort}, "private_key": s.RealityPrivateKey, "short_id": []string{s.RealityShortID}}}
@@ -63,43 +68,112 @@ func staticSiteRoute(domain string) M {
 
 func CaddyConfig(s State, root string) M {
 	servers := M{}
-	if s.Camouflage != nil {
-		name := fmt.Sprintf("port_%d", s.Camouflage.Port)
-		servers[name] = M{
-			"listen": []string{fmt.Sprintf("127.0.0.1:%d", s.Camouflage.Port)},
-			"routes": []any{staticSiteRoute(s.Camouflage.Domain)},
-			"automatic_https": M{"disable": true},
-		}
-	}
-	for _, w := range s.Websites {
-		name := fmt.Sprintf("port_%d", w.Port)
+	serverFor := func(port int, listen string, tlsEnabled bool) M {
+		name := fmt.Sprintf("port_%d", port)
 		server, ok := servers[name].(M)
 		if !ok {
-			server = M{"listen": []string{fmt.Sprintf(":%d", w.Port)}, "routes": []any{}, "automatic_https": M{"disable": true}}
-			if w.Access == "argo" {
-				server["listen"] = []string{fmt.Sprintf("127.0.0.1:%d", w.Port)}
-			} else {
-				server["tls_connection_policies"] = []any{M{}}
+			server = M{
+				"listen": []string{listen},
+				"routes": []any{},
+				"automatic_https": M{"disable": true},
 			}
 			servers[name] = server
+		} else if len(listen) > 0 && listen[0] == ':' {
+			server["listen"] = []string{listen}
 		}
+		if tlsEnabled {
+			server["tls_connection_policies"] = []any{M{}}
+		}
+		return server
+	}
+
+	// One Caddy listener fronts all VLESS + WS access modes on the shared
+	// internal port. Only the WebSocket path reaches sing-box; all other
+	// browser paths receive the same shared static camouflage page.
+	for _, v := range s.Services {
+		if v.Protocol != "vless-ws" {
+			continue
+		}
+		listen := fmt.Sprintf("127.0.0.1:%d", v.Port)
+		if v.Access != "argo" {
+			listen = fmt.Sprintf(":%d", v.Port)
+		}
+		server := serverFor(v.Port, listen, true)
+		path := v.Path
+		if path == "" {
+			path = "/gungun"
+		}
+		proxyRoute := M{
+			"match": []any{M{
+				"host": []string{v.Domain},
+				"path": []string{path, path + "/*"},
+			}},
+			"handle": []any{M{
+				"handler": "reverse_proxy",
+				"upstreams": []any{M{"dial": net.JoinHostPort("127.0.0.1", strconv.Itoa(v.BackendPort))}},
+				"transport": M{"protocol": "http"},
+			}},
+			"terminal": true,
+		}
+		server["routes"] = append(server["routes"].([]any), proxyRoute, staticSiteRoute(v.Domain))
+	}
+
+	for _, w := range s.Websites {
+		listen := fmt.Sprintf(":%d", w.Port)
+		if w.Access == "argo" {
+			listen = fmt.Sprintf("127.0.0.1:%d", w.Port)
+		}
+		server := serverFor(w.Port, listen, w.Access != "argo")
 		transport := M{"protocol": "http"}
 		if w.UpstreamTLS {
 			transport["tls"] = M{}
 		}
-		route := M{"match": []any{M{"host": []string{w.Domain}}}, "handle": []any{M{"handler": "reverse_proxy", "upstreams": []any{M{"dial": net.JoinHostPort(w.Target, strconv.Itoa(w.TargetPort))}}, "transport": transport}}, "terminal": true}
+		route := M{
+			"match": []any{M{"host": []string{w.Domain}}},
+			"handle": []any{M{
+				"handler": "reverse_proxy",
+				"upstreams": []any{M{"dial": net.JoinHostPort(w.Target, strconv.Itoa(w.TargetPort))}},
+				"transport": transport,
+			}},
+			"terminal": true,
+		}
 		server["routes"] = append(server["routes"].([]any), route)
 	}
-	tls := M{"certificates": M{"load_files": []any{M{"certificate": filepath.Join(root, "cert.pem"), "key": filepath.Join(root, "key.pem")}}}}
+
+	if s.Camouflage != nil {
+		server := serverFor(
+			s.Camouflage.Port,
+			fmt.Sprintf("127.0.0.1:%d", s.Camouflage.Port),
+			false,
+		)
+		server["routes"] = append(server["routes"].([]any), staticSiteRoute(s.Camouflage.Domain))
+	}
+
 	apps := M{"http": M{"servers": servers}}
-	for _, w := range s.Websites {
-		if w.Access != "argo" {
-			apps["tls"] = tls
+	needsTLS := false
+	for _, v := range s.Services {
+		if v.Protocol == "vless-ws" {
+			needsTLS = true
 			break
 		}
 	}
+	if !needsTLS {
+		for _, w := range s.Websites {
+			if w.Access != "argo" {
+				needsTLS = true
+				break
+			}
+		}
+	}
+	if needsTLS {
+		apps["tls"] = M{"certificates": M{"load_files": []any{M{
+			"certificate": filepath.Join(root, "cert.pem"),
+			"key": filepath.Join(root, "key.pem"),
+		}}}}
+	}
 	return M{"admin": M{"disabled": true}, "apps": apps}
 }
+
 func Export(s State) M {
 	nodes := []any{}
 	hostName := s.HostName

@@ -102,7 +102,15 @@ func AtomicWrite(path string, b []byte, mode os.FileMode) error {
 var managedFiles = []string{"state.json", "sing-box.json", "caddy.json", "tunnel.env", "key.pem", "cert.pem", "sing-box.enabled", "caddy.enabled", "tunnel.enabled"}
 
 func caddyRequired(s State) bool {
-	return len(s.Websites) > 0 || s.Camouflage != nil
+	if len(s.Websites) > 0 || s.Camouflage != nil {
+		return true
+	}
+	for _, service := range s.Services {
+		if service.Protocol == "vless-ws" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) Backup() (string, error) {
@@ -193,7 +201,7 @@ func (m *Manager) restart(s State) error {
 	for _, item := range []struct {
 		name    string
 		enabled bool
-	}{{"sing-box", len(s.Services) > 0}, {"caddy", len(s.Websites) > 0}, {"tunnel", s.TunnelToken != ""}} {
+	}{{"sing-box", len(s.Services) > 0}, {"caddy", caddyRequired(s)}, {"tunnel", s.TunnelToken != ""}} {
 		path := filepath.Join(m.Root, item.name+".enabled")
 		if item.enabled {
 			if e := AtomicWrite(path, []byte("enabled\n"), 0600); e != nil {
@@ -365,6 +373,13 @@ func (m *Manager) verifyOnce(s State) error {
 			return fmt.Errorf("listen verification: %w", e)
 		}
 		conn.Close()
+		if v.Protocol == "vless-ws" {
+			backend, backendErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", v.BackendPort), 500*time.Millisecond)
+			if backendErr != nil {
+				return fmt.Errorf("VLESS + WS loopback backend verification: %w", backendErr)
+			}
+			backend.Close()
+		}
 	}
 	if s.Camouflage != nil {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Camouflage.Port), 500*time.Millisecond)

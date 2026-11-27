@@ -102,6 +102,7 @@ export const serviceSchema = z
     id: z.string().regex(/^[a-z0-9-]{1,50}$/),
     protocol: protocolSchema,
     port: z.number().int().min(0).max(65535),
+    backendPort: z.number().int().min(0).max(65535).optional(),
     publicPort: z.number().int().min(0).max(65535),
     edgeScheme: z.enum(["http", "https"]).default("https"),
     edgePort: z.number().int().min(0).max(65535).default(0),

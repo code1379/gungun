@@ -427,7 +427,11 @@ export class Orchestrator {
           cf.edgeHostname(vps.zoneId, `web-${vps.namespace}.${vps.zoneName}`),
         );
         state.camouflage = { domain, port: await this.allocatePort(state, vps) };
-        await step("安装 / 更新 Caddy 伪装站入口", () => this.ssh.fq(vps, "core update caddy"));
+      }
+      if (services.some((service) => service.protocol === "vless-ws") || state.camouflage) {
+        await step("安装 / 更新 Caddy 伪装站与 WebSocket 入口", () =>
+          this.ssh.fq(vps, "core update caddy"),
+        );
       }
 
       const hasArgo =
@@ -698,10 +702,12 @@ export class Orchestrator {
           service,
         ];
       }
-      if (website) {
+      if (website || service?.protocol === "vless-ws") {
         await step("安装并校验 Caddy", () =>
           this.ssh.fq(vps, "core update caddy"),
         );
+      }
+      if (website) {
         state.websites = [
           ...state.websites.filter((w) => w.id !== website!.id),
           website,
@@ -898,6 +904,7 @@ export class Orchestrator {
   }
   private async allocatePort(state: RemoteState, vps: VPS) {
     const used = new Set(state.services.map((s) => s.port));
+    for (const s of state.services) if (s.backendPort) used.add(s.backendPort);
     for (const w of state.websites) used.add(w.port);
     if (state.camouflage) used.add(state.camouflage.port);
     const out = await this.ssh.run(vps, "ss -H -lntu");

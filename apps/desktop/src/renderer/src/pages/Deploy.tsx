@@ -486,7 +486,7 @@ export default function Deploy() {
                           <div className="section-heading">
                             <div>
                               <h3>接入方式</h3>
-                              <p>直连、CDN 和 Argo 共用同一个内部监听端口；每种入口只需单独设置域名和接入参数。</p>
+                              <p>直连、CDN 和 Argo 共用一个入口端口。普通浏览器访问节点域名会显示共享伪装站，WebSocket 路径转发给代理服务。</p>
                             </div>
                             <Badge tone="blue">多选</Badge>
                           </div>
