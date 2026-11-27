@@ -3,7 +3,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { isIP } from "node:net";
-import { dialog } from "electron";
+import { dialog, shell } from "electron";
 import {
   chainSchema,
   exportBase64,
@@ -76,6 +76,31 @@ export class API {
     switch (operation) {
       case "snapshot":
         return s.snapshot();
+      case "openExternal": {
+        const url = z.string().url().max(2048).parse(input);
+        const parsed = new URL(url);
+        const allowed = [
+          "cloudflare.com",
+          "developers.cloudflare.com",
+          "letsencrypt.org",
+          "tailscale.com",
+          "openssh.com",
+          "nodejs.org",
+          "pnpm.io",
+          "github.com",
+          "go.dev",
+          "sing-box.sagernet.org",
+        ];
+        if (
+          parsed.protocol !== "https:" ||
+          parsed.username ||
+          parsed.password ||
+          !allowed.some((host) => parsed.hostname === host || parsed.hostname.endsWith("." + host))
+        )
+          throw new Error("仅允许打开受信任的官方 HTTPS 文档与控制台");
+        await shell.openExternal(parsed.toString());
+        return true;
+      }
       case "newVps":
         return {
           id: randomUUID(),
