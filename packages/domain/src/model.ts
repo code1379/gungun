@@ -103,6 +103,7 @@ export const serviceSchema = z
     protocol: protocolSchema,
     port: z.number().int().min(0).max(65535),
     publicPort: z.number().int().min(0).max(65535),
+    edgeScheme: z.enum(["http", "https"]).default("https"),
     edgePort: portSchema.default(443),
     access: z.enum(["direct", "cdn", "argo"]),
     egress: z.enum(["DIRECT", "WARP"]).default("DIRECT"),
@@ -123,15 +124,16 @@ export const serviceSchema = z
         message: "仅 VLESS + WS 支持 CDN 和 Argo",
         path: ["access"],
       });
-    if (
-      s.access === "cdn" &&
-      ![443, 2053, 2083, 2087, 2096, 8443].includes(s.edgePort)
-    )
-      c.addIssue({
+    if (s.access === "cdn") {
+      const allowed = s.edgeScheme === "http"
+        ? [80, 8080, 8880, 2052, 2082, 2086, 2095]
+        : [443, 2053, 2083, 2087, 2096, 8443];
+      if (!allowed.includes(s.edgePort)) c.addIssue({
         code: "custom",
-        message: "不支持的 Cloudflare HTTPS Edge 端口",
+        message: `不支持的 Cloudflare ${s.edgeScheme.toUpperCase()} Edge 端口`,
         path: ["edgePort"],
       });
+    }
   });
 export type Service = z.infer<typeof serviceSchema>;
 export const websiteSchema = z.object({

@@ -12,16 +12,13 @@ type M = map[string]any
 func SingBoxConfig(s State, root string) M {
 	inbounds := []any{}
 	rules := []any{}
+	seenVlessWS := false
 	for _, v := range s.Services {
-		listen := "::"
-		if v.Access == "argo" {
-			listen = "127.0.0.1"
-		}
+		if v.Protocol == "vless-ws" && seenVlessWS { continue }
+		if v.Protocol == "vless-ws" { seenVlessWS = true }
 		typ := v.Protocol
-		if typ == "vless-ws" || typ == "vless-reality" {
-			typ = "vless"
-		}
-		in := M{"type": typ, "tag": v.ID, "listen": listen, "listen_port": v.Port}
+		if typ == "vless-ws" || typ == "vless-reality" { typ = "vless" }
+		in := M{"type": typ, "tag": v.ID, "listen": "::", "listen_port": v.Port}
 		tls := M{"enabled": true, "certificate_path": filepath.Join(root, "cert.pem"), "key_path": filepath.Join(root, "key.pem")}
 		switch v.Protocol {
 		case "hysteria2":
@@ -42,17 +39,15 @@ func SingBoxConfig(s State, root string) M {
 		case "vless-ws":
 			in["users"] = []any{M{"uuid": v.UUID}}
 			in["transport"] = M{"type": "ws", "path": v.Path}
-			if v.Access != "argo" {
-				in["tls"] = tls
-			}
+			// Keep TLS on the single shared listener. Argo and CDN both terminate
+			// the client-side TLS at their edge and use HTTPS to this origin.
+			in["tls"] = tls
 		case "vless-reality":
 			in["users"] = []any{M{"uuid": v.UUID, "flow": "xtls-rprx-vision"}}
 			in["tls"] = M{"enabled": true, "server_name": v.RealityServer, "reality": M{"enabled": true, "handshake": M{"server": v.RealityServer, "server_port": v.RealityPort}, "private_key": s.RealityPrivateKey, "short_id": []string{s.RealityShortID}}}
 		}
 		inbounds = append(inbounds, in)
-		if v.Egress == "WARP" {
-			rules = append(rules, M{"inbound": []string{v.ID}, "action": "route", "outbound": "warp"})
-		}
+		if v.Egress == "WARP" { rules = append(rules, M{"inbound": []string{v.ID}, "action": "route", "outbound": "warp"}) }
 	}
 	return M{"log": M{"level": "info", "timestamp": true}, "inbounds": inbounds, "outbounds": []any{M{"type": "direct", "tag": "direct"}, M{"type": "socks", "tag": "warp", "server": "127.0.0.1", "server_port": 40000, "version": "5"}}, "route": M{"rules": rules, "final": "direct"}}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
 )
 
 type Service struct {
@@ -16,6 +17,7 @@ type Service struct {
 	Protocol      string `json:"protocol"`
 	Port          int    `json:"port"`
 	PublicPort    int    `json:"publicPort"`
+	EdgeScheme    string `json:"edgeScheme,omitempty"`
 	EdgePort      int    `json:"edgePort"`
 	Access        string `json:"access"`
 	Egress        string `json:"egress"`
@@ -138,9 +140,19 @@ func (s *State) Normalize() error {
 		}
 		listenKey := listenerKey(serviceTransport(v.Protocol), v.Port)
 		if used[listenKey] != "" {
-			return fmt.Errorf("listen port collision: %s", listenKey)
+			sharedVlessWS := v.Protocol == "vless-ws" && strings.HasPrefix(used[listenKey], "vless-ws:")
+			if !sharedVlessWS { return fmt.Errorf("listen port collision: %s", listenKey) }
+		} else {
+			used[listenKey] = "vless-ws:" + v.ID
 		}
-		used[listenKey] = v.ID
+		if v.Protocol == "vless-ws" {
+			for j := 0; j < i; j++ {
+				previous := &s.Services[j]
+				if previous.Protocol == "vless-ws" && previous.Port != v.Port {
+					return errors.New("VLESS + WS access modes must share one internal listener port")
+				}
+			}
+		}
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
 				if s.Kind == "nat" {
@@ -152,11 +164,19 @@ func (s *State) Normalize() error {
 				return errors.New("invalid public port")
 			}
 		}
-		if v.EdgePort == 0 {
-			v.EdgePort = 443
+		if v.EdgeScheme == "" { v.EdgeScheme = "https" }
+		if v.EdgeScheme != "http" && v.EdgeScheme != "https" {
+			return errors.New("invalid Cloudflare edge scheme")
 		}
-		if v.Access == "cdn" && !httpsPort(v.EdgePort) {
-			return errors.New("unsupported Cloudflare HTTPS port")
+		if v.EdgePort == 0 {
+			if v.EdgeScheme == "http" { v.EdgePort = 80 } else { v.EdgePort = 443 }
+		}
+		if v.Access == "cdn" {
+			allowed := []int{443, 2053, 2083, 2087, 2096, 8443}
+			if v.EdgeScheme == "http" { allowed = []int{80, 8080, 8880, 2052, 2082, 2086, 2095} }
+			valid := false
+			for _, candidate := range allowed { if candidate == v.EdgePort { valid = true; break } }
+			if !valid { return fmt.Errorf("unsupported Cloudflare %s Edge port: %d", strings.ToUpper(v.EdgeScheme), v.EdgePort) }
 		}
 		if v.Domain != "" && !validDomain.MatchString(v.Domain) {
 			return errors.New("invalid domain")
