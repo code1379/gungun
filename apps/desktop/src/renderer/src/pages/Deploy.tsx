@@ -23,6 +23,8 @@ export default function Deploy() {
   const [vpsId, setVpsId] = useState("");
   const [service, setService] = useState<Service>(defaults);
   const [remote, setRemote] = useState<RemoteState | null>(null);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [zoneId, setZoneId] = useState("");
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
   const update = <K extends keyof Service>(key: K, value: Service[K]) =>
