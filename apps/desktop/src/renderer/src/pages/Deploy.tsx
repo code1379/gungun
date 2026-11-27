@@ -3,6 +3,7 @@ import { Rocket, Server, Shield, Network } from "lucide-react";
 import { RemoteState, Service, VPS } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Empty, Field, PageHeader, protocolLabels, Select, Input } from "../components/ui";
+interface Zone { id: string; name: string; account: { id: string; name: string } }
 const defaults: Service = {
   id: "hysteria2",
   protocol: "hysteria2",
@@ -31,6 +32,7 @@ export default function Deploy() {
     setService((prev) => ({ ...prev, [key]: value }));
   const selectHost = (id: string) => {
     setVpsId(id);
+    setZoneId(data.vps.find((v) => v.id === id)?.zoneId || "");
     setRemote(null);
     void run(async () =>
       setRemote(
