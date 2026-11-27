@@ -19,6 +19,7 @@ import {
   websiteSchema,
   type Chain,
   type ProxyNode,
+  type Service,
   type Tag,
   type VPS,
 } from "@gungun/domain";
@@ -273,12 +274,32 @@ export class API {
         const parsed = q.parse(input);
         const services = parsed.services ?? (parsed.service ? [parsed.service] : undefined);
         const v = s.get<VPS>("vps", parsed.vpsId);
+        const protocolNames: Record<Service["protocol"], string> = {
+          hysteria2: "Hysteria2",
+          tuic: "TUIC",
+          anytls: "AnyTLS",
+          snell: "Snell v6",
+          "vless-ws": "VLESS + WS",
+          "vless-reality": "VLESS + Reality",
+        };
+        const accessNames: Record<Service["access"], string> = {
+          direct: "直连",
+          cdn: "Cloudflare CDN",
+          argo: "Argo Tunnel",
+        };
+        const summary = services
+          ?.map(
+            (service) =>
+              `${protocolNames[service.protocol]} · ${accessNames[service.access]}`,
+          )
+          .join("、");
         return this.tasks.submit(
           parsed.website
             ? "部署网站"
             : `批量部署协议服务（${services?.length || 0} 项）`,
           v.id,
           (step) => this.orchestrator.deploy(v, services, parsed.website, step),
+          summary,
         );
       }
       case "remoteRead": {

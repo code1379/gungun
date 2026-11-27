@@ -269,11 +269,12 @@ export class Store {
       },
     };
   }
-  task(type: string, vpsId: string | null): Task {
+  task(type: string, vpsId: string | null, summary?: string): Task {
     const now = new Date().toISOString();
     return this.putRaw("tasks", {
       id: randomUUID(),
       type,
+      ...(summary ? { summary } : {}),
       vpsId,
       state: "queued",
       progress: 0,

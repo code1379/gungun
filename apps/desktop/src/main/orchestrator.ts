@@ -25,6 +25,39 @@ const protocolDomainPrefix: Record<Service["protocol"], string> = {
   "vless-ws": "vless-ws",
   "vless-reality": "reality",
 };
+
+function tunnelIngress(state: Pick<RemoteState, "services" | "websites">) {
+  return [
+    ...state.services
+      .filter((service) => service.access === "argo")
+      .map((service) => ({
+        hostname: service.domain,
+        service:
+          service.protocol === "vless-ws"
+            ? `https://127.0.0.1:${service.port}`
+            : `http://127.0.0.1:${service.port}`,
+        ...(service.protocol === "vless-ws"
+          ? { originRequest: { originServerName: service.domain } }
+          : {}),
+      })),
+    ...state.websites
+      .filter((website) => website.access === "argo")
+      .map((website) => ({
+        hostname: website.domain,
+        service: `http://127.0.0.1:${website.port}`,
+      })),
+  ];
+}
+
+export function tunnelIngressSignature(
+  state: Pick<RemoteState, "services" | "websites">,
+) {
+  return JSON.stringify(
+    tunnelIngress(state).sort((a, b) =>
+      (a.hostname || "").localeCompare(b.hostname || ""),
+    ),
+  );
+}
 export class Orchestrator {
   readonly certificates: Certificates;
   private cfLane: Promise<unknown> = Promise.resolve();
@@ -155,6 +188,8 @@ export class Orchestrator {
         namespace: originalVps.namespace,
         zoneName: originalVps.zoneName,
       };
+      // Only reconcile the Tunnel when this deployment actually changes its Argo ingress.
+      const previousTunnelSignature = tunnelIngressSignature(state);
 
       const backup = await step("备份远程配置", () =>
         this.ssh.fq<{ backupId: string }>(originalVps, "backup"),
@@ -301,30 +336,15 @@ export class Orchestrator {
       const hasArgo =
         state.services.some((service) => service.access === "argo") ||
         state.websites.some((website) => website.access === "argo");
-      const ingress = [
-        ...state.services
-          .filter((service) => service.access === "argo")
-          .map((service) => ({
-            hostname: service.domain,
-            service:
-              service.protocol === "vless-ws"
-                ? `https://127.0.0.1:${service.port}`
-                : `http://127.0.0.1:${service.port}`,
-            ...(service.protocol === "vless-ws"
-              ? { originRequest: { originServerName: service.domain } }
-              : {}),
-          })),
-        ...state.websites
-          .filter((website) => website.access === "argo")
-          .map((website) => ({
-            hostname: website.domain,
-            service: `http://127.0.0.1:${website.port}`,
-          })),
-      ];
+      const ingress = tunnelIngress(state);
+      const tunnelChanged =
+        previousTunnelSignature !== tunnelIngressSignature(state);
       if (new Set(ingress.map((item) => item.hostname)).size !== ingress.length)
         throw new Error("Tunnel hostname 重复，请为每项服务选择不同域名");
 
-      if (hasArgo) {
+      // Adding an unrelated protocol (for example Hysteria2 direct) must not
+      // fetch a Tunnel token, rewrite ingress or reinstall cloudflared.
+      if (hasArgo && (tunnelChanged || !vps.tunnelId)) {
         if (!vps.zoneId || !vps.zoneName || !vps.accountId)
           throw new Error("创建 Argo Tunnel 前请先绑定 Cloudflare Account 和 Zone");
         const tunnel = await step("准备此 VPS 的固定 Tunnel", () =>
@@ -353,7 +373,7 @@ export class Orchestrator {
         await step("安装 / 更新 cloudflared", () =>
           this.ssh.fq(vps, "core update cloudflared"),
         );
-      } else if (vps.tunnelId) {
+      } else if (!hasArgo && tunnelChanged && vps.tunnelId) {
         await this.updateTunnel(vps, state, step, undo);
       }
 
@@ -690,21 +710,7 @@ export class Orchestrator {
     step: Step,
     undo: (() => Promise<void>)[],
   ) {
-    const ingress = [
-      ...state.services
-        .filter((s) => s.access === "argo")
-        .map((s) => ({
-          hostname: s.domain,
-          service: s.protocol === "vless-ws" ? `https://127.0.0.1:${s.port}` : `http://127.0.0.1:${s.port}`,
-          ...(s.protocol === "vless-ws" ? { originRequest: { originServerName: s.domain } } : {}),
-        })),
-      ...state.websites
-        .filter((w) => w.access === "argo")
-        .map((w) => ({
-          hostname: w.domain,
-          service: `http://127.0.0.1:${w.port}`,
-        })),
-    ];
+    const ingress = tunnelIngress(state);
     const cf = new Cloudflare(this.store.settings());
     undo.push(
       await step("更新 Tunnel 路由", () =>
@@ -716,6 +722,7 @@ export class Orchestrator {
   async remove(vps: VPS, kind: "service" | "website", id: string, step: Step) {
     const action = async () => {
       const state = await step("读取真实配置", () => this.ssh.state(vps));
+      const previousTunnelSignature = tunnelIngressSignature(state);
       const backup = await step("备份配置", () =>
         this.ssh.fq<{ backupId: string }>(vps, "backup"),
       );
@@ -731,7 +738,12 @@ export class Orchestrator {
         if (kind === "service")
           state.services = state.services.filter((s) => s.id !== id);
         else state.websites = state.websites.filter((w) => w.id !== id);
-        if (vps.tunnelId) await this.updateTunnel(vps, state, step, undo);
+        if (
+          vps.tunnelId &&
+          previousTunnelSignature !== tunnelIngressSignature(state)
+        ) {
+          await this.updateTunnel(vps, state, step, undo);
+        }
         await step("应用、验证与失败回滚", () =>
           this.ssh.fq(vps, "apply", state),
         );

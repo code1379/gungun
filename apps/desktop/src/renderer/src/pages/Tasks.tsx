@@ -1,12 +1,18 @@
+import { ChevronDown } from "lucide-react";
 import { useApp } from "../api";
-import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
+import { Badge, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
+
 function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
   const units = ["KB", "MB", "GB"];
   let size = value / 1024, index = 0;
-  while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index++;
+  }
   return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
 }
+
 const labels = {
   queued: "排队中",
   running: "执行中",
@@ -14,9 +20,11 @@ const labels = {
   failed: "失败",
   interrupted: "已中断",
 };
+
 export default function Tasks() {
-  const { data, call, run } = useApp();
+  const { data } = useApp();
   if (!data) return null;
+
   return (
     <>
       <PageHeader
@@ -25,65 +33,85 @@ export default function Tasks() {
       />
       {data.tasks.length ? (
         <div className="tasks-list">
-          {[...data.tasks].reverse().map((t) => (
-            <section className="task-card" key={t.id}>
-              <div className="section-heading">
-                <div>
-                  <h2>{t.type}</h2>
-                  <p>
-                    {data.vps.find((v) => v.id === t.vpsId)?.name || "本机任务"}{" "}
-                    · {new Date(t.createdAt).toLocaleString()}
-                  </p>
-                </div>
-                <Badge
-                  tone={
-                    t.state === "success"
-                      ? "good"
-                      : ["failed", "interrupted"].includes(t.state)
-                        ? "bad"
-                        : "blue"
-                  }
-                >
-                  {labels[t.state]}
-                </Badge>
-              </div>
-              <Progress value={t.progress} max={100} aria-label="任务进度" />
-              <div className="task-steps">
-                {t.steps.map((step, i) => (
-                  <div key={i} className={`task-step step-${step.state}`}>
-                    <span className="step-dot" />
-                    <div>
-                      <span>{step.name}</span>
-                      {step.transfer && (
-                        <div className="task-transfer">
-                          <div className="task-transfer-meta">
-                            <span>{formatBytes(step.transfer.transferred)} / {formatBytes(step.transfer.total)}</span>
-                            <strong>{step.transfer.percent}%</strong>
-                          </div>
-                          <Progress value={step.transfer.percent} max={100} aria-label="文件上传进度" />
-                        </div>
-                      )}
-                      {step.message && (
-                        <p className="error-text">{step.message}</p>
-                      )}
-                    </div>
+          {[...data.tasks].reverse().map((task) => (
+            <details className="task-card" key={task.id}>
+              <summary className="task-card-summary">
+                <div className="task-summary-main">
+                  <div className="task-summary-title">
+                    <h2>{task.type}</h2>
+                    <p>
+                      {data.vps.find((vps) => vps.id === task.vpsId)?.name || "本机任务"}
+                      {" · "}
+                      {new Date(task.createdAt).toLocaleString()}
+                    </p>
+                    {task.summary && (
+                      <p className="task-summary-description">{task.summary}</p>
+                    )}
                   </div>
-                ))}
+                  <div className="task-summary-meta">
+                    <Badge
+                      tone={
+                        task.state === "success"
+                          ? "good"
+                          : ["failed", "interrupted"].includes(task.state)
+                            ? "bad"
+                            : "blue"
+                      }
+                    >
+                      {labels[task.state]}
+                    </Badge>
+                    <span className="task-expand-label">
+                      执行详情
+                      <ChevronDown size={15} />
+                    </span>
+                  </div>
+                </div>
+                {task.state === "running" && (
+                  <Progress
+                    value={task.progress}
+                    max={100}
+                    aria-label="任务进度"
+                  />
+                )}
+              </summary>
+              <div className="task-card-details">
+                <div className="task-progress-meta">
+                  <span>执行进度</span>
+                  <strong>{task.progress}%</strong>
+                </div>
+                <Progress value={task.progress} max={100} aria-label="任务进度" />
+                <div className="task-steps">
+                  {task.steps.map((step, index) => (
+                    <div key={index} className={`task-step step-${step.state}`}>
+                      <span className="step-dot" />
+                      <div>
+                        <span>{step.name}</span>
+                        {step.transfer && (
+                          <div className="task-transfer">
+                            <div className="task-transfer-meta">
+                              <span>
+                                {formatBytes(step.transfer.transferred)} /{" "}
+                                {formatBytes(step.transfer.total)}
+                              </span>
+                              <strong>{step.transfer.percent}%</strong>
+                            </div>
+                            <Progress
+                              value={step.transfer.percent}
+                              max={100}
+                              aria-label="文件上传进度"
+                            />
+                          </div>
+                        )}
+                        {step.message && (
+                          <p className="error-text">{step.message}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {task.error && <ErrorView error={task.error} />}
               </div>
-              {t.error && <ErrorView error={t.error} />}
-              <div className="form-actions">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void run(() =>
-                      call("openWindow", { type: "task", id: t.id }),
-                    );
-                  }}
-                >
-                  独立窗口查看详情
-                </Button>
-              </div>
-            </section>
+            </details>
           ))}
         </div>
       ) : (
@@ -94,4 +122,3 @@ export default function Tasks() {
     </>
   );
 }
-

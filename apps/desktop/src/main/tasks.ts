@@ -13,8 +13,9 @@ export class TaskCenter {
     type: string,
     vpsId: string | null,
     run: (step: Step) => Promise<unknown>,
+    summary?: string,
   ) {
-    const task = this.store.task(type, vpsId);
+    const task = this.store.task(type, vpsId, summary);
     this.pending.push({ task, run });
     this.notify();
     this.pump();

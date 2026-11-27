@@ -195,6 +195,7 @@ export interface TaskStep {
 }
 export interface Task {
   output?: unknown;
+  summary?: string;
   id: string;
   type: string;
   vpsId: string | null;
