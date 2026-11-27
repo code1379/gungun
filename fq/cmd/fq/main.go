@@ -90,7 +90,7 @@ func run(args []string) error {
 		case "status":
 			statuses := manager.M{}
 			for _, name := range []string{"gungun-sing-box", "gungun-caddy", "gungun-tunnel", "warp-svc"} {
-				out, err := m.Command("systemctl", "is-active", name)
+				out, err := m.ServiceAction(name, "status")
 				statuses[name] = manager.M{"active": err == nil, "status": strings.TrimSpace(string(out))}
 			}
 			result = manager.M{"version": version, "services": statuses}
@@ -108,7 +108,7 @@ func run(args []string) error {
 			if unit != "gungun-sing-box" && unit != "gungun-caddy" && unit != "gungun-tunnel" {
 				return errors.New("invalid log unit")
 			}
-			out, err := m.Command("journalctl", "-u", unit, "-n", "200", "--no-pager", "-o", "short-iso")
+			out, err := m.ServiceLogs(unit, 200)
 			e = err
 			result = manager.M{"log": string(out)}
 		case "restart":
@@ -195,11 +195,7 @@ func run(args []string) error {
 			if !*yes {
 				return errors.New("fq uninstall --yes [--purge] required")
 			}
-			for _, unit := range []string{"gungun-sing-box", "gungun-caddy", "gungun-tunnel"} {
-				_, _ = m.Command("systemctl", "disable", "--now", unit)
-				_ = os.Remove("/etc/systemd/system/" + unit + ".service")
-			}
-			_, e = m.Command("systemctl", "daemon-reload")
+			e = m.UninstallServices()
 			if e == nil && *purge {
 				e = os.RemoveAll(m.Root)
 			}

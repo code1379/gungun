@@ -64,6 +64,7 @@ func fakeManager(t *testing.T) *Manager {
 	m := New(t.TempDir(), t.TempDir())
 	m.Run = func(_ context.Context, _ string, _ ...string) ([]byte, error) { return []byte("active"), nil }
 	m.Verify = func(State) error { return nil }
+	m.InitSystem = "systemd"
 	return m
 }
 func TestNormalizeCapabilities(t *testing.T) {

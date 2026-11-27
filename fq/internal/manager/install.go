@@ -183,38 +183,18 @@ func (m *Manager) InstallCore(name string) (M, error) {
 		}
 	}
 	if unit != "" {
-		_, _ = m.Command("systemctl", "reset-failed", unit)
-		if _, e = m.Command("systemctl", "restart", unit); e == nil {
-			e = m.Verify(state)
-		}
+		if _, e = m.ServiceAction(unit, "restart"); e == nil { e = m.Verify(state) }
 		if e != nil {
 			_, undo := rollback(e)
-			_, _ = m.Command("systemctl", "reset-failed", unit)
-			_, restart := m.Command("systemctl", "restart", unit)
+			_, restart := m.ServiceAction(unit, "restart")
 			return nil, errors.Join(undo, restart)
 		}
 	}
 
 	return M{"ok": true, "core": name, "version": strings.TrimSpace(string(out))}, nil
 }
-func (m *Manager) InstallUnits() error {
-	units := map[string]string{
-		"gungun-sing-box": "ExecStart=" + m.Bin + "/sing-box run -c " + m.Root + "/sing-box.json\n",
-		"gungun-caddy":    "ExecStart=" + m.Bin + "/caddy run --config " + m.Root + "/caddy.json\n",
-		"gungun-tunnel":   "EnvironmentFile=" + m.Root + "/tunnel.env\nExecStart=" + m.Bin + "/cloudflared tunnel --no-autoupdate run\n",
-	}
-	for name, command := range units {
-		data := "[Unit]\nDescription=Gungun managed " + name + "\nAfter=network-online.target\nWants=network-online.target\nConditionPathExists=" + m.Root + "/state.json\nConditionPathExists=" + m.Root + "/" + strings.TrimPrefix(name, "gungun-") + ".enabled\n[Service]\n" + command + "StateDirectory=" + name + "\nEnvironment=XDG_DATA_HOME=/var/lib/" + name + "\nRestart=on-failure\nRestartSec=3\nUMask=0077\nNoNewPrivileges=true\nProtectHome=true\nProtectSystem=full\nPrivateTmp=true\n[Install]\nWantedBy=multi-user.target\n"
-		if e := AtomicWrite("/etc/systemd/system/"+name+".service", []byte(data), 0644); e != nil {
-			return e
-		}
-	}
-	if _, e := m.Command("systemctl", "daemon-reload"); e != nil {
-		return e
-	}
-	_, e := m.Command("systemctl", "enable", "gungun-sing-box", "gungun-caddy", "gungun-tunnel")
-	return e
-}
+func (m *Manager) InstallUnits() error { return m.InstallServices() }
+
 func (m *Manager) UpdateSelf(version string) (M, error) {
 	if !strings.HasPrefix(version, "v") || strings.ContainsAny(version, "/\\ ") {
 		return nil, errors.New("explicit release version required")

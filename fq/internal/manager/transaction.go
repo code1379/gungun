@@ -20,10 +20,11 @@ import (
 
 type Runner func(context.Context, string, ...string) ([]byte, error)
 type Manager struct {
-	Root   string
-	Bin    string
-	Run    Runner
+	Root string
+	Bin string
+	Run Runner
 	Verify func(State) error
+	InitSystem string
 }
 
 func Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -207,14 +208,9 @@ func (m *Manager) restart(s State) error {
 		enabled bool
 	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", len(s.Websites) > 0}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		verb := "stop"
-		if item.enabled {
-			verb = "restart"
-			if _, e := m.Command("systemctl", "reset-failed", item.name); e != nil {
-				return e
-			}
-		}
-		if _, e := m.Command("systemctl", verb, item.name); e != nil {
-			log, _ := m.Command("journalctl", "-u", item.name, "-n", "30", "--no-pager")
+		if item.enabled { verb = "restart" }
+		if _, e := m.ServiceAction(item.name, verb); e != nil {
+			log, _ := m.ServiceLogs(item.name, 30)
 			return fmt.Errorf("%w; recent log: %s", e, log)
 		}
 	}
@@ -323,9 +319,7 @@ func (m *Manager) verifyOnce(s State) error {
 		enabled bool
 	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", len(s.Websites) > 0}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		if item.enabled {
-			if _, e := m.Command("systemctl", "is-active", "--quiet", item.name); e != nil {
-				return e
-			}
+			if _, e := m.ServiceAction(item.name, "status"); e != nil { return e }
 		}
 	}
 	for _, v := range s.Services {
