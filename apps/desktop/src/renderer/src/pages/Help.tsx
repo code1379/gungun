@@ -5,8 +5,8 @@ import { Button, PageHeader } from "../components/ui";
 const topics = [
   {
     title: "Cloudflare API Key",
-    description: "设置中填写账号邮箱和 Global API Key。登录 Cloudflare 后从头像菜单进入 My Profile → API Tokens，在 Global API Key 区域点击 View 并完成身份验证。",
-    url: "https://dash.cloudflare.com/profile/api-tokens",
+    description: "设置中填写账号邮箱和 Global API Key。登录 Cloudflare 后进入 My Profile → API Keys，在 Global API Key 一栏点击 View 并完成身份验证；不要创建 API Token。",
+    url: "https://dash.cloudflare.com/profile/api-keys",
     label: "获取 Global API Key",
     icon: Shield,
   },
