@@ -83,11 +83,44 @@ export class Orchestrator {
   }
   async deploy(
     vps: VPS,
-    service: Service | undefined,
+    services: Service[] | undefined,
     website: Website | undefined,
     step: Step,
   ) {
-    const action = () => this.deployInner(vps, service, website, step);
+    const action = async () => {
+      if (website) return this.deployInner(vps, undefined, website, step);
+      if (!services?.length) throw new Error("请选择至少一个协议和接入方式");
+
+      const prepared = services.map((service) => serviceSchema.parse(service));
+      const credentials = new Map<string, { password: string; uuid: string }>();
+      for (const service of prepared) {
+        const existing = credentials.get(service.protocol);
+        const shared = existing || {
+          password: service.password || randomUUID() + randomUUID(),
+          uuid: service.uuid || randomUUID(),
+        };
+        service.password = service.password || shared.password;
+        service.uuid = service.uuid || shared.uuid;
+        if (!existing) credentials.set(service.protocol, shared);
+      }
+
+      const results: unknown[] = [];
+      const failures: string[] = [];
+      for (const service of prepared) {
+        const currentVps = this.store.get<VPS>("vps", vps.id);
+        try {
+          results.push(await this.deployInner(currentVps, service, undefined, step));
+        } catch (error) {
+          failures.push(`${service.protocol}/${service.access}: ${String(error)}`);
+        }
+      }
+      if (failures.length) {
+        throw new Error(
+          `批量部署完成 ${results.length}/${prepared.length} 项；失败项：${failures.join("；")}`,
+        );
+      }
+      return { deployed: results.length, results };
+    };
     const run = this.cfLane.then(action, action);
     this.cfLane = run.catch(() => {});
     return run;
@@ -133,6 +166,13 @@ export class Orchestrator {
         (!vps.zoneId || !vps.zoneName)
       )
         throw new Error("请选择 Cloudflare Zone");
+      if (
+        service &&
+        !["snell", "vless-reality"].includes(service.protocol) &&
+        service.access !== "argo" &&
+        (!vps.zoneId || !vps.zoneName)
+      )
+        throw new Error("该协议需要 TLS 证书，请先绑定 Cloudflare Zone");
       if (service) {
         service = { ...service };
         const generated = !service.domain;
@@ -204,7 +244,7 @@ export class Orchestrator {
         if (!service.domain && vps.zoneName)
           service.domain = `${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`;
         state.services = [
-          ...state.services.filter((s) => s.protocol !== service!.protocol),
+          ...state.services.filter((s) => s.id !== service!.id),
           service,
         ];
       }

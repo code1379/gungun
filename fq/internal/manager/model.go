@@ -93,7 +93,6 @@ func (s *State) Normalize() error {
 	}
 	used := map[int]string{}
 	ids := map[string]bool{}
-	protocols := map[string]bool{}
 	for i := range s.Services {
 		v := &s.Services[i]
 		if !validID.MatchString(v.ID) || ids[v.ID] {
@@ -105,10 +104,6 @@ func (s *State) Normalize() error {
 		default:
 			return errors.New("unsupported protocol")
 		}
-		if protocols[v.Protocol] {
-			return errors.New("one instance per protocol in first release")
-		}
-		protocols[v.Protocol] = true
 		if v.Access != "direct" && v.Access != "cdn" && v.Access != "argo" {
 			return errors.New("invalid access")
 		}

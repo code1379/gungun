@@ -94,7 +94,7 @@ func Export(s State) M {
 		hostName = s.HostID
 	}
 	for _, v := range s.Services {
-		base := M{"id": s.HostID + ":" + v.ID + ":direct", "name": hostName + "-" + v.Protocol, "protocol": v.Protocol, "address": s.PublicAddress, "port": v.PublicPort, "password": v.Password, "uuid": v.UUID, "sni": v.Domain, "tls": v.Protocol != "snell", "insecure": false, "host": v.Domain, "path": v.Path, "publicKey": s.RealityPublicKey, "shortId": s.RealityShortID, "fingerprint": "chrome", "alpn": []string{}, "snellMode": "default", "tagId": "vps-" + s.HostID, "vpsId": s.HostID, "serviceId": v.ID, "source": "vps", "access": v.Access}
+		base := M{"id": s.HostID + ":" + v.ID + ":direct", "name": hostName + "-" + v.Protocol + "-" + v.Access, "protocol": v.Protocol, "address": s.PublicAddress, "port": v.PublicPort, "password": v.Password, "uuid": v.UUID, "sni": v.Domain, "tls": v.Protocol != "snell", "insecure": false, "host": v.Domain, "path": v.Path, "publicKey": s.RealityPublicKey, "shortId": s.RealityShortID, "fingerprint": "chrome", "alpn": []string{}, "snellMode": "default", "tagId": "vps-" + s.HostID, "vpsId": s.HostID, "serviceId": v.ID, "source": "vps", "access": v.Access}
 		if v.Protocol == "vless-reality" {
 			base["sni"] = v.RealityServer
 		}

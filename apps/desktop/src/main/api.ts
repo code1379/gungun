@@ -262,16 +262,23 @@ export class API {
         const q = z
           .object({
             vpsId: id,
+            services: z.array(serviceSchema).min(1).max(18).optional(),
             service: serviceSchema.optional(),
             website: websiteSchema.optional(),
           })
-          .refine((q) => !!q.service !== !!q.website)
-          .parse(input);
-        const v = s.get<VPS>("vps", q.vpsId);
+          .refine((value) => {
+            const hasServices = !!value.services?.length || !!value.service;
+            return Number(hasServices) + Number(!!value.website) === 1;
+          }, "请选择一组协议服务或一个网站");
+        const parsed = q.parse(input);
+        const services = parsed.services ?? (parsed.service ? [parsed.service] : undefined);
+        const v = s.get<VPS>("vps", parsed.vpsId);
         return this.tasks.submit(
-          q.service ? "部署协议服务" : "部署网站",
+          parsed.website
+            ? "部署网站"
+            : `批量部署协议服务（${services?.length || 0} 项）`,
           v.id,
-          (step) => this.orchestrator.deploy(v, q.service, q.website, step),
+          (step) => this.orchestrator.deploy(v, services, parsed.website, step),
         );
       }
       case "remoteRead": {
