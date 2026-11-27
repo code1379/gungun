@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Rocket, Server, Shield, Network, LoaderCircle, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { RemoteState, Service, VPS } from "@gungun/domain";
 import { useApp } from "../api";
-import { Badge, Button, Empty, Field, PageHeader, protocolLabels, Select, Input } from "../components/ui";
+import { Badge, Button, Empty, Field, PageHeader, protocolLabels, Select, Input, Checkbox } from "../components/ui";
 interface Zone { id: string; name: string; account: { id: string; name: string } }
 const defaults: Service = {
   id: "hysteria2",
@@ -23,6 +23,9 @@ export default function Deploy() {
   const { data, call, run } = useApp();
   const [vpsId, setVpsId] = useState("");
   const [service, setService] = useState<Service>(defaults);
+  const [selectedProtocols, setSelectedProtocols] = useState<Service["protocol"][]>(["hysteria2"]);
+  const [accessModes, setAccessModes] = useState<Service["access"][]>(["direct"]);
+  const [customDomains, setCustomDomains] = useState<Record<string, string>>({});
   const [remote, setRemote] = useState<RemoteState | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [zoneId, setZoneId] = useState("");
@@ -48,6 +51,11 @@ export default function Deploy() {
       .then((state) => {
         setRemote(state);
         setRemoteStatus("ready");
+        if (state.services.length) {
+          setSelectedProtocols([...new Set(state.services.map((item) => item.protocol))]);
+          const modes = state.services.filter((item) => item.protocol === "vless-ws").map((item) => item.access);
+          setAccessModes(modes.length ? [...new Set(modes)] : ["direct"]);
+        }
       })
       .catch((error) => {
         const message = String(error);
@@ -62,13 +70,11 @@ export default function Deploy() {
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
   const selectedZone = zones.find((zone) => zone.id === zoneId);
-  const activeZoneName = selectedZone?.name || vps?.zoneName || "";
-  const domainPrefix = service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node";
-  const generatedDomain = activeZoneName && vps
-    ? `${domainPrefix}.${vps.namespace}.${activeZoneName}`
-    : "";
   const update = <K extends keyof Service>(key: K, value: Service[K]) =>
     setService((prev) => ({ ...prev, [key]: value }));
+  const selectedCombinations = selectedProtocols.flatMap((protocol) =>
+    (protocol === "vless-ws" ? accessModes : ["direct" as const]).map((access) => ({ protocol, access })),
+  );
   const readRemote = (id: string) => {
     setRemote(null);
     setRemoteError("");
@@ -95,6 +101,9 @@ export default function Deploy() {
     setZoneId(host?.zoneId || "");
     setZoneStatus(host?.zoneId ? "success" : "idle");
     setZoneMessage(host?.zoneName ? `当前绑定：${host.zoneName}` : "");
+    setSelectedProtocols(["hysteria2"]);
+    setAccessModes(["direct"]);
+    setCustomDomains({});
     readRemote(id);
   };
   const readZones = async () => {
@@ -251,9 +260,11 @@ export default function Deploy() {
                   void run(async () => {
                     setDeploying(true);
                     try {
-                    const needsZone = service.access !== "direct" || !!service.domain.trim();
+                    const needsZone = selectedCombinations.some(({ protocol, access }) =>
+                      access !== "direct" || !["snell", "vless-reality"].includes(protocol),
+                    ) || Object.values(customDomains).some((domain) => !!domain.trim());
                     if (needsZone && !vps.zoneName && !selectedZone)
-                      throw new Error("当前接入方式需要域名，请先在上方绑定 Cloudflare Zone");
+                      throw new Error("所选服务需要域名或 TLS 证书，请先绑定 Cloudflare Zone");
                     if (selectedZone && selectedZone.id !== vps.zoneId) {
                       await call("saveVps", {
                         ...vps,
@@ -262,7 +273,34 @@ export default function Deploy() {
                         accountId: selectedZone.account.id,
                       });
                     }
-                    await call("deploy", { vpsId: vps.id, service });
+                    const occupied = new Set([...(remote?.services || []).map((item) => item.port), ...(remote?.websites || []).map((item) => item.port)]);
+                    const services = selectedCombinations.map(({ protocol, access }, index) => {
+                      let port = vps.kind === "nat" ? Number(service.port) + index : 0;
+                      if (vps.kind === "nat" && occupied.has(port)) {
+                        while (occupied.has(port) && port < 65535) port++;
+                      }
+                      if (port) occupied.add(port);
+                      const publicPort = access === "argo" ? 0 : vps.kind === "nat" ? Number(service.publicPort) + index : 0;
+                      const prefix = access === "cdn" ? "cdn" : access === "argo" ? "argo" : "node";
+                      const zoneName = selectedZone?.name || vps.zoneName;
+                      const generatedDomain = zoneName ? `${prefix}.${vps.namespace}.${zoneName}` : "";
+                      const customDomain = customDomains[access] || "";
+                      const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
+                      return {
+                        ...service,
+                        ...(existing || {}),
+                        id: `${protocol}-${access}`,
+                        protocol,
+                        access,
+                        port: existing?.port || port,
+                        publicPort: existing?.publicPort || publicPort,
+                        domain: customDomain.trim() || existing?.domain || generatedDomain,
+                      };
+                    });
+                    const ports = services.map((item) => item.port).filter(Boolean);
+                    if (new Set(ports).size !== ports.length)
+                      throw new Error("多个服务使用了相同内部端口，请调整端口起始值");
+                    await call("deploy", { vpsId: vps.id, services });
                     } finally {
                       setDeploying(false);
                     }
@@ -274,50 +312,56 @@ export default function Deploy() {
                   <Badge tone="blue">sing-box</Badge>
                 </div>
                 <div className="protocol-grid">
-                  {Object.entries(protocolLabels).map(([id, label]) => (
-                    <button
-                      type="button"
-                      key={id}
-                      className={`protocol-choice ${service.protocol === id ? "active" : ""}`}
-                      onClick={() => {
-                        const existing = remote?.services.find(
-                          (s) => s.protocol === id,
-                        );
-                        setService(
-                          existing || {
-                            ...defaults,
-                            id,
-                            protocol: id as Service["protocol"],
-                            access: "direct",
-                          },
-                        );
-                      }}
-                    >
-                      <Network size={19} />
-                      <span>{label}</span>
-                      {remote?.services.some((s) => s.protocol === id) && (
-                        <Badge tone="good">已部署</Badge>
-                      )}
-                    </button>
-                  ))}
+                  {Object.entries(protocolLabels).map(([id, label]) => {
+                    const selected = selectedProtocols.includes(id as Service["protocol"]);
+                    return (
+                      <label key={id} className={`protocol-choice ${selected ? "active" : ""}`}>
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={(checked) => setSelectedProtocols((current) =>
+                            checked
+                              ? [...current, id as Service["protocol"]]
+                              : current.filter((item) => item !== id),
+                          )}
+                        />
+                        <Network size={19} />
+                        <span>{label}</span>
+                        {remote?.services.some((s) => s.protocol === id) && <Badge tone="good">已部署</Badge>}
+                      </label>
+                    );
+                  })}
                 </div>
+                {selectedProtocols.includes("vless-ws") && (
+                  <section className="access-mode-panel">
+                    <div className="section-heading">
+                      <div><h3>VLESS + WS 接入方式</h3><p>支持同时部署直连、Cloudflare CDN 和 Argo Tunnel。</p></div>
+                      <Badge tone="blue">多选</Badge>
+                    </div>
+                    <div className="access-mode-options">
+                      {(["direct", "cdn", "argo"] as const).map((access) => (
+                        <label key={access} className={`access-mode-choice ${accessModes.includes(access) ? "active" : ""}`}>
+                          <Checkbox
+                            checked={accessModes.includes(access)}
+                            onCheckedChange={(checked) => setAccessModes((current) =>
+                              checked ? [...current, access] : current.filter((item) => item !== access),
+                            )}
+                          />
+                          <span>{access === "direct" ? "直连" : access === "cdn" ? "Cloudflare CDN" : "Argo Tunnel"}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <div className="form-grid">
 
-                  <Field label="接入方式">
-                    <Select
-                      value={service.access}
-                      onValueChange={(value) =>
-                        update("access", value as Service["access"])}
-                    >
-                      <option value="direct">直连</option>
-                      {service.protocol === "vless-ws" && (
-                        <>
-                          <option value="cdn">Cloudflare CDN</option>
-                          <option value="argo">Argo Tunnel</option>
-                        </>
-                      )}
-                    </Select>
+                  <Field label="内部监听端口起始值" hint={vps.kind === "nat" ? "NAT 主机将为每个选中的服务递增分配端口，请确认公网映射端口范围。" : "公网 VPS 可填 0，由系统自动分配。"}>
+                    <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={service.port} onChange={(e) => update("port", Number(e.target.value))} />
                   </Field>
+                  {vps.kind === "nat" && (
+                    <Field label="公网映射端口起始值" hint="批量部署时按服务顺序递增。">
+                      <Input type="number" min={1} max={65535} value={service.publicPort} onChange={(e) => update("publicPort", Number(e.target.value))} />
+                    </Field>
+                  )}
                   <Field label="协议出站">
                     <Select
                       value={service.egress}
@@ -328,89 +372,28 @@ export default function Deploy() {
                       <option value="WARP">WARP</option>
                     </Select>
                   </Field>
-                  <Field
-                    label="内部监听端口"
-                    hint={
-                      vps.kind === "nat"
-                        ? "NAT 主机必须填写内部端口。"
-                        : "0 表示自动分配可用端口。"
-                    }
-                  >
-                    <Input
-                      type="number"
-                      min={vps.kind === "nat" ? 1 : 0}
-                      max={65535}
-                      required
-                      value={service.port}
-                      onChange={(e) => update("port", Number(e.target.value))}
-                    />
-                  </Field>
-                  {service.access !== "argo" && (
-                    <Field
-                      label="公网回源 / 映射端口"
-                      hint={
-                        vps.kind === "nat"
-                          ? "填写服务商已分配的公网映射端口。"
-                          : "0 表示与内部监听端口相同。"
-                      }
-                    >
-                      <Input
-                        type="number"
-                        required
-                        min={vps.kind === "nat" ? 1 : 0}
-                        max={65535}
-                        value={service.publicPort}
-                        onChange={(e) =>
-                          update("publicPort", Number(e.target.value))
-                        }
-                      />
-                    </Field>
-                  )}
-                  {service.access === "cdn" && (
+                  {accessModes.includes("cdn") && selectedProtocols.includes("vless-ws") && (
                     <Field label="Cloudflare Edge HTTPS 端口">
-                      <Select
-                        value={service.edgePort}
-                        onValueChange={(value) =>
-                          update("edgePort", Number(value))}
-                      >
-                        {[443, 2053, 2083, 2087, 2096, 8443].map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
+                      <Select value={String(service.edgePort)} onValueChange={(value) => update("edgePort", Number(value))}>
+                        {[443, 2053, 2083, 2087, 2096, 8443].map((port) => <option key={port} value={port}>{port}</option>)}
                       </Select>
                     </Field>
                   )}
-                  {service.protocol !== "vless-reality" && (
-                    <Field
-                      label="域名（可选）"
-                      hint={
-                        service.domain
-                          ? "使用你填写的自定义域名；必须属于当前选择的 Cloudflare Zone。"
-                          : generatedDomain
-                            ? `留空自动生成：${generatedDomain}`
-                            : service.access === "direct"
-                              ? "可留空；如果需要 DNS 和证书，可先选择 Cloudflare Zone。"
-                              : "先在上方选择 Cloudflare Zone；域名无需手动填写，留空即可自动生成。"
-                      }
-                    >
-                      <Input
-                        value={service.domain}
-                        onChange={(e) => update("domain", e.target.value)}
-                        placeholder={generatedDomain || "留空自动生成域名"}
-                      />
-                    </Field>
-                  )}
-                  {service.protocol === "vless-ws" && (
+                  {vps.zoneId && vps.zoneName && [...new Set(selectedCombinations.filter(({ protocol }) => !["snell", "vless-reality"].includes(protocol)).map(({ access }) => access))].map((access) => {
+                    const prefix = access === "cdn" ? "cdn" : access === "argo" ? "argo" : "node";
+                    const suggested = `${prefix}.${vps.namespace}.${vps.zoneName}`;
+                    return (
+                      <Field key={access} label={`${access === "direct" ? "直连" : access === "cdn" ? "CDN" : "Argo"} 域名（可选）`} hint={`留空自动使用：${suggested}`}>
+                        <Input value={customDomains[access] || ""} onChange={(e) => setCustomDomains((current) => ({ ...current, [access]: e.target.value }))} placeholder={suggested} />
+                      </Field>
+                    );
+                  })}
+                  {selectedProtocols.includes("vless-ws") && (
                     <Field label="WebSocket 路径">
-                      <Input
-                        required
-                        value={service.path}
-                        onChange={(e) => update("path", e.target.value)}
-                      />
+                      <Input value={service.path} onChange={(e) => update("path", e.target.value)} />
                     </Field>
                   )}
-                  {service.protocol === "vless-reality" && (
+                  {selectedProtocols.includes("vless-reality") && (
                     <>
                       <Field label="Reality 握手目标">
                         <Input
@@ -435,7 +418,7 @@ export default function Deploy() {
                     </>
                   )}
                   <Field
-                    label={service.protocol === "snell" ? "PSK" : "密码"}
+                    label={selectedProtocols.length === 1 && selectedProtocols[0] === "snell" ? "PSK" : "密码 / PSK"}
                     hint="留空由 fq 生成随机凭据。"
                   >
                     <Input
@@ -445,9 +428,7 @@ export default function Deploy() {
                       onChange={(e) => update("password", e.target.value)}
                     />
                   </Field>
-                  {["tuic", "vless-ws", "vless-reality"].includes(
-                    service.protocol,
-                  ) && (
+                  {selectedProtocols.some((protocol) => ["tuic", "vless-ws", "vless-reality"].includes(protocol)) && (
                     <Field label="UUID" hint="留空自动生成。">
                       <Input
                         value={service.uuid}
@@ -456,7 +437,7 @@ export default function Deploy() {
                     </Field>
                   )}
                 </div>
-                {service.access === "argo" && (
+                {accessModes.includes("argo") && selectedProtocols.includes("vless-ws") && (
                   <p className="info-note">
                     <Network size={17} />
                     复用此 VPS 的固定 Tunnel，生成 443 TLS 和 80 HTTP
@@ -471,9 +452,9 @@ export default function Deploy() {
                   </p>
                 )}
                 <div className="form-actions">
-                  <Button type="submit" variant="default" loading={deploying} disabled={deploying}>
+                  <Button type="submit" variant="default" loading={deploying} disabled={deploying || selectedProtocols.length === 0 || (selectedProtocols.includes("vless-ws") && accessModes.length === 0)}>
                     <Rocket size={16} />
-                    {deploying ? "正在提交部署…" : `部署到 ${vps.name}`}
+                    {deploying ? "正在提交批量部署…" : `批量部署到 ${vps.name}（${selectedCombinations.length} 项）`}
                   </Button>
                 </div>
               </form>

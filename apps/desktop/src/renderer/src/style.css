@@ -896,6 +896,36 @@
     min-width: 0;
     overflow: hidden;
   }
+  .access-mode-panel {
+    margin: 18px 0;
+    padding: 15px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .access-mode-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-top: 12px;
+  }
+  .access-mode-choice {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted-foreground);
+    font-size: 12px;
+  }
+  .access-mode-choice.active {
+    border-color: var(--primary);
+    background: light-dark(#e5edf8, #263346);
+    color: var(--foreground);
+  }
   .protocol-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
