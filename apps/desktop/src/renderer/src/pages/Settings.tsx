@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings as SettingsType } from "@gungun/domain";
 import { useApp } from "../api";
 import {
@@ -9,16 +9,41 @@ import {
   Select,
   Input,
 } from "../components/ui";
+interface SSHKeyStatus {
+  path: string;
+  privateExists: boolean;
+  publicExists: boolean;
+  exists: boolean;
+  publicKey: string;
+}
+interface SSHKeyCandidate {
+  path: string;
+  publicKey: string;
+}
 export default function Settings() {
   const { data, call, run } = useApp();
   const [draft, setDraft] = useState<SettingsType | null>(null);
   const [result, setResult] = useState<unknown>(null);
+  const [keyStatus, setKeyStatus] = useState<SSHKeyStatus | null>(null);
+  const [rotationCandidate, setRotationCandidate] = useState<SSHKeyCandidate | null>(null);
+  useEffect(() => {
+    let active = true;
+    void call<SSHKeyStatus>("sshKeyStatus")
+      .then((status) => {
+        if (active) setKeyStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [call]);
   if (!data) return null;
   const values = draft || data.settings;
   const update = <K extends keyof SettingsType>(
     key: K,
     value: SettingsType[K],
   ) => setDraft({ ...values, [key]: value });
+  const sshKeyPath = values.sshKeyPath || "~/.ssh/id_ed25519_gungun";
   return (
     <>
       <PageHeader
@@ -150,27 +175,62 @@ export default function Settings() {
         </section>
         <section className="section settings-section">
           <h2>SSH 与 Tailscale</h2>
-          <Field label="默认 SSH 私钥">
-            <Input
-              value={values.sshKeyPath}
-              onChange={(e) => update("sshKeyPath", e.target.value)}
-            />
+          <Field label="默认 SSH 私钥" hint="Gungun 默认使用 Ed25519 密钥；首次使用时在这里生成。">
+            <div className="input-action">
+              <Input
+                value={sshKeyPath}
+                onChange={(e) => update("sshKeyPath", e.target.value)}
+              />
+              <Button
+                type="button"
+                onClick={() => {
+                  void run(async () => {
+                    const path = await call<string | null>("chooseKey");
+                    if (path) {
+                      setDraft({ ...values, sshKeyPath: path });
+                      setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path }));
+                    }
+                  });
+                }}
+              >
+                选择已有密钥
+              </Button>
+            </div>
           </Field>
-          <div className="toolbar">
+          <p className="hint">
+            默认路径：~/.ssh/id_ed25519_gungun。当前状态：{keyStatus?.exists
+              ? "私钥和公钥均已存在"
+              : keyStatus?.privateExists || keyStatus?.publicExists
+                ? "检测到不完整的密钥文件，请检查后处理"
+                : "尚未生成默认密钥"}。
+          </p>
+          <div className="toolbar wrap">
             <Button
               type="button"
+              disabled={!!keyStatus?.privateExists || !!keyStatus?.publicExists}
               onClick={() => {
                 void run(async () => {
-                  const result = await call<{
-                    path: string;
-                    publicKey: string;
-                  }>("generateKey");
-                  setResult(result);
-                  setDraft({ ...values, sshKeyPath: result.path });
-                }, "已生成新的 Ed25519 密钥，旧密钥保留");
+                  const generated = await call<SSHKeyCandidate>("generateKey", { path: sshKeyPath });
+                  setResult(generated);
+                  setDraft({ ...values, sshKeyPath: generated.path });
+                  setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: generated.path }));
+                }, "Gungun 默认 SSH 密钥已生成");
               }}
             >
-              生成 / 轮换主密钥
+              生成默认密钥
+            </Button>
+            <Button
+              type="button"
+              disabled={!keyStatus?.exists}
+              onClick={() => {
+                void run(async () => {
+                  const candidate = await call<SSHKeyCandidate>("rotateKey", { path: sshKeyPath });
+                  setRotationCandidate(candidate);
+                  setResult({ message: "轮换密钥已生成，尚未切换默认密钥", ...candidate });
+                }, "轮换密钥已生成；旧密钥仍在使用");
+              }}
+            >
+              轮换密钥
             </Button>
             <Button
               type="button"
@@ -180,10 +240,47 @@ export default function Settings() {
             >
               检查本机 Tailscale
             </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                void run(async () => setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: sshKeyPath })));
+              }}
+            >
+              检查密钥
+            </Button>
           </div>
+          {rotationCandidate && (
+            <div className="section rounded-lg border p-4">
+              <h3 className="font-medium">待切换的新密钥</h3>
+              <p className="hint">
+                先将下面的公钥加入需要使用此密钥的 VPS 的 authorized_keys，并测试新密钥登录成功。完成后再设为默认密钥；旧私钥文件会保留。
+              </p>
+              <p className="mono break-all">{rotationCandidate.path}</p>
+              <pre className="output">{rotationCandidate.publicKey}</pre>
+              <div className="toolbar">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void run(async () => {
+                      if (!window.confirm("请确认新公钥已安装到所有需要使用它的 VPS，并且新密钥登录测试成功。继续切换默认密钥？")) return;
+                      const activated = await call("activateSSHKey", { path: rotationCandidate.path });
+                      setResult(activated);
+                      setDraft({ ...values, sshKeyPath: rotationCandidate.path });
+                      setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: rotationCandidate.path }));
+                      setRotationCandidate(null);
+                    }, "默认 SSH 密钥已切换；旧私钥仍保留");
+                  }}
+                >
+                  设为默认密钥
+                </Button>
+                <Button type="button" onClick={() => setRotationCandidate(null)}>
+                  取消
+                </Button>
+              </div>
+            </div>
+          )}
           <p className="hint">
-            新密钥需要加入远程用户的 authorized_keys。轮换不会覆盖旧私钥或现有
-            SSH config。
+            添加 VPS 时默认使用这里配置的密钥。轮换是独立操作，不会覆盖旧私钥；请先部署并验证新公钥，再切换默认密钥。
           </p>
         </section>
         <div className="form-actions">

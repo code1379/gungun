@@ -3,16 +3,11 @@ import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server } fr
 import { VPS } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
-interface Zone {
-  id: string;
-  name: string;
-  account: { id: string; name: string };
-}
 export default function Vps() {
   const { data, call, run } = useApp();
   const [editing, setEditing] = useState<VPS | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [overridePublicAddress, setOverridePublicAddress] = useState(false);
   const [test, setTest] = useState("");
   const [detail, setDetail] = useState<unknown>(null);
   if (!data) return null;
@@ -45,6 +40,7 @@ export default function Vps() {
               variant="default"
               onClick={() => {
                 setTest("");
+                setOverridePublicAddress(false);
                 void run(async () => setEditing(await call<VPS>("newVps")));
               }}
             >
@@ -70,7 +66,12 @@ export default function Vps() {
             {current.tailscale && <Badge tone="blue">Tailscale</Badge>}
           </div>
           <div className="toolbar wrap">
-            <Button onClick={() => setEditing(current)}>
+            <Button
+              onClick={() => {
+                setOverridePublicAddress(current.publicAddress !== current.address);
+                setEditing(current);
+              }}
+            >
               <Pencil size={15} />
               编辑
             </Button>
@@ -146,12 +147,11 @@ export default function Vps() {
             <dd>
               {data.vps.find((v) => v.id === current.jumpId)?.name || "无"}
             </dd>
-            <dt>Cloudflare Zone</dt>
-            <dd>{current.zoneName || "未选择"}</dd>
             <dt>域名空间</dt>
             <dd>
-              {current.namespace}
-              {current.zoneName && `.${current.zoneName}`}
+              {current.zoneName
+                ? `${current.namespace}.${current.zoneName}`
+                : `${current.namespace}（尚未绑定域名）`}
             </dd>
             <dt>Tunnel</dt>
             <dd>{current.tunnelId || "部署 Argo 时创建"}</dd>
@@ -188,7 +188,10 @@ export default function Vps() {
               <div className="grow">
                 <strong>{v.name}</strong>
                 <p>
-                  {v.address}:{v.sshPort}
+                  {v.address ? `${v.address}:${v.sshPort}` : "尚未填写服务器地址"}
+                </p>
+                <p className="muted">
+                  域名空间：{v.namespace}{v.zoneName ? `.${v.zoneName}` : ""}
                 </p>
               </div>
               {v.jumpId && (
@@ -221,7 +224,10 @@ export default function Vps() {
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
-                await call("saveVps", editing);
+                await call("saveVps", {
+                  ...editing,
+                  publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
+                });
                 setEditing(null);
               }, "VPS 已保存");
             }}
@@ -243,22 +249,51 @@ export default function Vps() {
                   <option value="nat">NAT VPS</option>
                 </Select>
               </Field>
-              <Field label="SSH 地址" hint="公网 IP、主机名或 Tailscale IP">
+              <Field label="服务器地址" hint="Gungun 使用此地址建立 SSH 连接；可填写公网 IP、域名或 Tailscale IP">
                 <Input
                   required
+                  placeholder="例如 203.0.113.10"
                   value={editing.address}
-                  onChange={(e) => set("address", e.target.value)}
+                  onChange={(e) => {
+                    const address = e.target.value;
+                    setEditing((old) =>
+                      old
+                        ? {
+                            ...old,
+                            address,
+                            publicAddress: overridePublicAddress ? old.publicAddress : address,
+                          }
+                        : old,
+                    );
+                  }}
                 />
               </Field>
               <Field
-                label="公网地址"
-                hint="用于节点直连与 DNS 回源；NAT 填映射公网 IP"
+                label="节点对外地址"
+                hint={overridePublicAddress
+                  ? "用于生成节点连接地址与 DNS 回源；NAT VPS 填运营商分配的映射公网 IP。"
+                  : "默认与服务器地址相同。只有 NAT 映射或独立对外入口时才需要单独指定。"}
               >
-                <Input
-                  required
-                  value={editing.publicAddress}
-                  onChange={(e) => set("publicAddress", e.target.value)}
-                />
+                <div className="grid gap-3">
+                  <label className="checkbox">
+                    <Checkbox
+                      checked={!overridePublicAddress}
+                      onCheckedChange={(checked) => {
+                        setOverridePublicAddress(!checked);
+                        if (checked) set("publicAddress", editing.address);
+                      }}
+                    />
+                    与服务器地址相同
+                  </label>
+                  {overridePublicAddress && (
+                    <Input
+                      required
+                      placeholder="例如 NAT 映射公网 IP"
+                      value={editing.publicAddress}
+                      onChange={(e) => set("publicAddress", e.target.value)}
+                    />
+                  )}
+                </div>
               </Field>
               <Field label="SSH 端口">
                 <Input
@@ -281,29 +316,18 @@ export default function Vps() {
                   value={editing.auth}
                   onValueChange={(value) => set("auth", value as VPS["auth"])}
                 >
-                  <option value="key">SSH 私钥</option>
+                  <option value="key">Gungun 默认 SSH 私钥</option>
                   <option value="password">密码</option>
                 </Select>
               </Field>
               {editing.auth === "key" ? (
-                <Field label="私钥路径">
-                  <div className="input-action">
-                    <Input
-                      value={editing.keyPath}
-                      onChange={(e) => set("keyPath", e.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        void run(async () => {
-                          const path = await call<string | null>("chooseKey");
-                          if (path) set("keyPath", path);
-                        });
-                      }}
-                    >
-                      选择
-                    </Button>
-                  </div>
+                <Field label="SSH 私钥">
+                  <p className="hint">
+                    使用设置中的默认密钥：{editing.keyPath || data.settings.sshKeyPath || "~/.ssh/id_ed25519_gungun"}
+                  </p>
+                  <p className="hint">
+                    密钥统一在「设置 → SSH 与 Tailscale」中生成、选择和轮换。
+                  </p>
                 </Field>
               ) : (
                 <Field label="密码">
@@ -340,59 +364,30 @@ export default function Vps() {
                   使用 Tailscale 地址连接
                 </label>
               </Field>
-              <Field label="Cloudflare Zone">
+              <Field
+                label="独立域名标识"
+                hint="创建 VPS 时自动生成；绑定 Cloudflare Zone 后会组成完整域名。保存后固定，不需要手动填写。"
+              >
                 <div className="input-action">
-                  <Select
-                    value={editing.zoneId}
-                    onValueChange={(value) => {
-                      const z = zones.find((z) => z.id === value);
-                      if (z)
-                        setEditing({
-                          ...editing,
-                          zoneId: z.id,
-                          zoneName: z.name,
-                          accountId: z.account.id,
+                  <Input value={editing.namespace} readOnly />
+                  {!data.vps.some((v) => v.id === editing.id) && (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        void run(async () => {
+                          const namespace = await call<string>("newNamespace");
+                          set("namespace", namespace);
                         });
-                      else
-                        setEditing({
-                          ...editing,
-                          zoneId: "",
-                          zoneName: "",
-                          accountId: "",
-                        });
-                    }}
-                  >
-                    <option value="">选择 Zone</option>
-                    {editing.zoneId &&
-                      !zones.some((z) => z.id === editing.zoneId) && (
-                        <option value={editing.zoneId}>
-                          {editing.zoneName}
-                        </option>
-                      )}
-                    {zones.map((z) => (
-                      <option key={z.id} value={z.id}>
-                        {z.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      void run(async () =>
-                        setZones(await call<Zone[]>("zones")),
-                      );
-                    }}
-                  >
-                    读取
-                  </Button>
+                      }}
+                    >
+                      重新生成
+                    </Button>
+                  )}
                 </div>
               </Field>
-              <Field label="独立域名空间">
-                <Input
-                  value={editing.namespace}
-                  onChange={(e) => set("namespace", e.target.value)}
-                />
-              </Field>
+              <p className="hint">
+                Cloudflare Zone 在「网络服务 → 域名管理」中绑定，不影响 SSH 连接。
+              </p>
             </div>
             {test && <pre className="output">{test}</pre>}
             <div className="form-actions">
@@ -409,7 +404,10 @@ export default function Vps() {
                         `跳板机连接成功\n${pretty(result)}\n正在连接目标…`,
                       );
                     }
-                    const r = await call("sshTest", editing);
+                    const r = await call("sshTest", {
+                      ...editing,
+                      publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
+                    });
                     setTest((prev) => `${prev}\n目标连接成功\n${pretty(r)}`);
                   }, "SSH 连接成功");
                 }}

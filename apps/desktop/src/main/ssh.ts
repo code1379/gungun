@@ -1,15 +1,19 @@
 import ssh2 from "ssh2";
 import type { Client, ClientChannel } from "ssh2";
 const { Client: SSHClient } = ssh2;
-import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
+import { readFile, mkdir, writeFile, chmod, access } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { VPS, RemoteState } from "@gungun/domain";
 import type { Store } from "./store";
 const exec = promisify(execFile);
+const DEFAULT_SSH_KEY_PATH = "~/.ssh/id_ed25519_gungun";
+export function resolveSSHKeyPath(path: string) {
+  return path.replace(/^~(?=\/)/, homedir());
+}
 export const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 export interface Connection {
   client: Client;
@@ -44,7 +48,11 @@ export class SSH {
     try {
       const privateKey =
         vps.auth === "key"
-          ? await readFile(vps.keyPath.replace(/^~(?=\/)/, homedir()))
+          ? await readFile(
+              resolveSSHKeyPath(
+                vps.keyPath || this.store.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH,
+              ),
+            )
           : undefined;
       await new Promise<void>((resolve, reject) => {
         client
@@ -194,7 +202,7 @@ export class SSH {
     const config = hosts
       .map(
         (v) =>
-          `Host gungun-${v.id}\n  HostName ${v.address}\n  Port ${v.sshPort}\n  User ${v.username}\n${v.auth === "key" ? `  IdentityFile ${JSON.stringify(v.keyPath)}\n  IdentitiesOnly yes\n` : ""}${v.jumpId ? `  ProxyJump gungun-${v.jumpId}\n` : ""}`,
+          `Host gungun-${v.id}\n  HostName ${v.address}\n  Port ${v.sshPort}\n  User ${v.username}\n${v.auth === "key" ? `  IdentityFile ${JSON.stringify(resolveSSHKeyPath(v.keyPath || this.store.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH))}\n  IdentitiesOnly yes\n` : ""}${v.jumpId ? `  ProxyJump gungun-${v.jumpId}\n` : ""}`,
       )
       .join("\n");
     await writeFile(join(dir, "config"), config, { mode: 0o600 });
@@ -214,16 +222,36 @@ export class SSH {
       return { available: false, error: String(e) };
     }
   }
+  async keyStatus(path: string) {
+    const resolved = resolveSSHKeyPath(path || DEFAULT_SSH_KEY_PATH);
+    const privateExists = await access(resolved).then(() => true).catch(() => false);
+    const publicKey = await readFile(`${resolved}.pub`, "utf8").catch(() => "");
+    const publicExists = publicKey.trim().length > 0;
+    return {
+      path: resolved,
+      privateExists,
+      publicExists,
+      exists: privateExists && publicExists,
+      publicKey: publicExists ? publicKey.trim() : "",
+    };
+  }
   async generateKey(path: string) {
-    await mkdir(join(homedir(), ".ssh", "gungun"), {
-      recursive: true,
-      mode: 0o700,
-    });
+    const resolved = resolveSSHKeyPath(path || DEFAULT_SSH_KEY_PATH);
+    await mkdir(dirname(resolved), { recursive: true, mode: 0o700 });
+    await chmod(dirname(resolved), 0o700);
+    const current = await this.keyStatus(resolved);
+    if (current.privateExists || current.publicExists)
+      throw new Error("目标 SSH 密钥文件已存在，拒绝覆盖；如需更换请使用「轮换密钥」");
     await exec(
       "ssh-keygen",
-      ["-t", "ed25519", "-f", path, "-N", "", "-C", "gungun"],
+      ["-t", "ed25519", "-f", resolved, "-N", "", "-C", "gungun"],
       { timeout: 15000 },
     );
-    return readFile(`${path}.pub`, "utf8");
+    await chmod(resolved, 0o600);
+    await chmod(`${resolved}.pub`, 0o644);
+    return {
+      path: resolved,
+      publicKey: await readFile(`${resolved}.pub`, "utf8"),
+    };
   }
 }
