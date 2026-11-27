@@ -1,21 +1,39 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, KeyRound } from "lucide-react";
+import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
 import { VPS } from "@gungun/domain";
-import { useApp } from "../api";
+import { errorText, useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
 export default function Vps() {
   const { data, call, run } = useApp();
   const [editing, setEditing] = useState<VPS | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [overridePublicAddress, setOverridePublicAddress] = useState(false);
-  const [test, setTest] = useState("");
+  const [testResult, setTestResult] = useState<{
+    status: "success" | "failed";
+    latencyMs?: number;
+    output?: string;
+    jumpSummary?: string;
+    message?: string;
+  } | null>(null);
+  const [testing, setTesting] = useState(false);
   const [detail, setDetail] = useState<unknown>(null);
-  const [installingKey, setInstallingKey] = useState(false);
+  const [detailLabel, setDetailLabel] = useState("");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<Record<string, "connected" | "failed">>({});
   if (!data) return null;
   const current = data.vps.find((v) => v.id === selected);
   const set = <K extends keyof VPS>(k: K, v: VPS[K]) =>
     setEditing((old) => (old ? { ...old, [k]: v } : old));
+  const runAction = (id: string, action: () => Promise<unknown>, success = "") => {
+    void run(async () => {
+      setPendingAction(id);
+      try {
+        await action();
+      } finally {
+        setPendingAction(null);
+      }
+    }, success);
+  };
   return (
     <>
       <PageHeader
@@ -42,10 +60,12 @@ export default function Vps() {
         actions={
           <Button
             variant="default"
+            loading={pendingAction === "new-vps"}
+            disabled={pendingAction !== null}
             onClick={() => {
-              setTest("");
+              setTestResult(null);
               setOverridePublicAddress(false);
-              void run(async () => setEditing(await call<VPS>("newVps")));
+              runAction("new-vps", async () => setEditing(await call<VPS>("newVps")));
             }}
           >
             <Plus size={16} />
@@ -83,21 +103,15 @@ export default function Vps() {
           <div className="toolbar wrap">
             {current.auth === "password" ? (
               <Button
-                disabled={installingKey}
-                onClick={() => {
-                  void run(async () => {
-                    setInstallingKey(true);
-                    try {
-                      const result = await call("installSSHKey", { vpsId: current.id });
-                      setDetail(result);
-                    } finally {
-                      setInstallingKey(false);
-                    }
-                  }, "SSH 公钥已安装并验证，已切换为密钥认证");
-                }}
+                loading={pendingAction === "install-key"}
+                disabled={pendingAction !== null}
+                onClick={() => runAction("install-key", async () => {
+                  const result = await call("installSSHKey", { vpsId: current.id });
+                  setDetail(result);
+                  setDetailLabel("SSH 主密钥安装与验证结果");
+                }, "SSH 公钥已安装并验证，已切换为密钥认证")}
               >
-                <KeyRound size={15} />
-                {installingKey ? "正在安装密钥…" : "安装 SSH 主密钥"}
+                安装 SSH 主密钥
               </Button>
             ) : (
               <Badge tone="good">SSH 密钥认证已启用</Badge>
@@ -105,6 +119,7 @@ export default function Vps() {
             <Button
               onClick={() => {
                 setOverridePublicAddress(current.publicAddress !== current.address);
+                setTestResult(null);
                 setEditing(current);
               }}
             >
@@ -112,70 +127,67 @@ export default function Vps() {
               编辑
             </Button>
             <Button
-              onClick={() => {
-                void run(() =>
-                  call("openWindow", { type: "terminal", id: current.id }),
-                );
-              }}
+              loading={pendingAction === "terminal"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("terminal", () =>
+                call("openWindow", { type: "terminal", id: current.id }),
+              )}
             >
               <Terminal size={15} />
               SSH 终端
             </Button>
             <Button
-              onClick={() => {
-                void run(() =>
-                  call("openWindow", { type: "logs", id: current.id }),
-                );
-              }}
+              loading={pendingAction === "logs"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("logs", () =>
+                call("openWindow", { type: "logs", id: current.id }),
+              )}
             >
               <ScrollText size={15} />
               实时日志
             </Button>
             <Button
-              onClick={() => {
-                void run(
-                  () => call("installFq", current.id),
-                  "安装任务已加入队列",
-                );
-              }}
+              loading={pendingAction === "install-fq"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("install-fq", () => call("installFq", current.id), "安装任务已加入队列")}
             >
               安装 / 更新 fq
             </Button>
             <Button
-              onClick={() => {
-                void run(
-                  () => call("syncVps", current.id),
-                  "同步任务已加入队列",
-                );
-              }}
+              loading={pendingAction === "sync"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("sync", () => call("syncVps", current.id), "同步任务已加入队列")}
             >
               <RefreshCw size={15} />
               手动同步节点
             </Button>
             <Button
-              onClick={() => {
-                void run(async () =>
-                  setDetail(
-                    await call("remoteRead", {
-                      vpsId: current.id,
-                      action: "status",
-                    }),
-                  ),
-                );
-              }}
+              loading={pendingAction === "status"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("status", async () => {
+                setDetail(await call("remoteRead", { vpsId: current.id, action: "status" }));
+                setDetailLabel("远程状态检查结果");
+              })}
             >
               检查状态
             </Button>
             <Button
-              onClick={() => {
-                void run(async () =>
-                  setDetail(await call("sshConfig", current.id)),
-                );
-              }}
+              loading={pendingAction === "ssh-config"}
+              disabled={pendingAction !== null}
+              onClick={() => runAction("ssh-config", async () => {
+                setDetail(await call("sshConfig", current.id));
+                setDetailLabel("独立 SSH config 已生成");
+              })}
             >
               生成独立 SSH config
             </Button>
           </div>
+          {detail !== null && (
+            <details className="result-disclosure">
+              <summary>{detailLabel || "查看最近操作结果"}</summary>
+              <pre className="output">{pretty(detail)}</pre>
+            </details>
+          )}
           <dl className="details">
             <dt>公网地址</dt>
             <dd>{current.publicAddress}</dd>
@@ -192,7 +204,6 @@ export default function Vps() {
             <dt>Tunnel</dt>
             <dd>{current.tunnelId || "部署 Argo 时创建"}</dd>
           </dl>
-          {detail !== null && <pre className="output">{pretty(detail)}</pre>}
           <div className="danger-zone">
             <Confirm
               title={`删除 ${current.name}？`}
@@ -272,11 +283,16 @@ export default function Vps() {
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
-                await call("saveVps", {
-                  ...editing,
-                  publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
-                });
-                setEditing(null);
+                setPendingAction("save-vps");
+                try {
+                  await call("saveVps", {
+                    ...editing,
+                    publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
+                  });
+                  setEditing(null);
+                } finally {
+                  setPendingAction(null);
+                }
               }, "VPS 已保存");
             }}
           >
@@ -440,44 +456,73 @@ export default function Vps() {
                 </label>
               </Field>
             </div>
-            {test && <pre className="output">{test}</pre>}
-            <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-popover py-3">
+            <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-popover py-3 vps-form-actions">
               <Button
                 type="button"
+                loading={testing}
+                disabled={testing || pendingAction !== null}
                 onClick={() => {
+                  setTestResult(null);
                   void run(async () => {
+                    setTesting(true);
                     try {
+                      let jumpSummary = "";
                       if (editing.jumpId) {
-                        const jump = data.vps.find(
-                          (v) => v.id === editing.jumpId,
-                        )!;
-                        const result = await call("sshTest", jump);
+                        const jump = data.vps.find((v) => v.id === editing.jumpId)!;
+                        const jumpResult = await call<{ latencyMs: number }>("sshTest", jump);
                         setConnectionStatus((old) => ({ ...old, [jump.id]: "connected" }));
-                        setTest(
-                          `跳板机连接成功\n${pretty(result)}\n正在连接目标…`,
-                        );
+                        jumpSummary = `跳板机 ${jump.name} ${jumpResult.latencyMs} ms`;
                       }
-                      const r = await call("sshTest", {
+                      const result = await call<{ latencyMs: number; output: string }>("sshTest", {
                         ...editing,
                         publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
                       });
                       setConnectionStatus((old) => ({ ...old, [editing.id]: "connected" }));
-                      setTest((prev) => `${prev}\n目标连接成功\n${pretty(r)}`);
+                      setTestResult({
+                        status: "success",
+                        latencyMs: result.latencyMs,
+                        output: result.output,
+                        jumpSummary,
+                      });
                     } catch (error) {
                       setConnectionStatus((old) => ({ ...old, [editing.id]: "failed" }));
-                      throw error;
+                      setTestResult({
+                        status: "failed",
+                        message: errorText(String(error)),
+                      });
+                    } finally {
+                      setTesting(false);
                     }
-                  }, "SSH 连接成功");
+                  });
                 }}
               >
-                测试连接
+                {testing ? "测试中…" : "测试连接"}
               </Button>
+              {testResult && (
+                <div className={`ssh-test-result ${testResult.status}`}>
+                  {testResult.status === "success" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                  <div className="ssh-test-result-content">
+                    <strong>{testResult.status === "success" ? "SSH 连接成功" : "SSH 连接失败"}</strong>
+                    <span>
+                      {testResult.status === "success"
+                        ? [testResult.jumpSummary, `目标 ${testResult.latencyMs} ms`].filter(Boolean).join(" · ")
+                        : testResult.message}
+                    </span>
+                    {testResult.status === "success" && testResult.output && (
+                      <details>
+                        <summary>查看系统信息</summary>
+                        <pre>{testResult.output}</pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              )}
               <span className="grow" />
-              <Button type="button" onClick={() => setEditing(null)}>
+              <Button type="button" disabled={testing || pendingAction !== null} onClick={() => setEditing(null)}>
                 取消
               </Button>
-              <Button type="submit" variant="default">
-                保存 VPS
+              <Button type="submit" variant="default" loading={pendingAction === "save-vps"} disabled={pendingAction !== null || testing}>
+                {pendingAction === "save-vps" ? "保存中…" : "保存 VPS"}
               </Button>
             </div>
           </form>

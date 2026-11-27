@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2, Info } from "lucide-react";
 import { Settings as SettingsType } from "@gungun/domain";
 import { useApp } from "../api";
 import {
@@ -23,7 +24,10 @@ interface SSHKeyCandidate {
 export default function Settings() {
   const { data, call, run } = useApp();
   const [draft, setDraft] = useState<SettingsType | null>(null);
-  const [result, setResult] = useState<unknown>(null);
+  const [cloudflareResult, setCloudflareResult] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [tailscaleResult, setTailscaleResult] = useState<unknown>(null);
+  const [sshMessage, setSshMessage] = useState("");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [keyStatus, setKeyStatus] = useState<SSHKeyStatus | null>(null);
   const [rotationCandidate, setRotationCandidate] = useState<SSHKeyCandidate | null>(null);
   useEffect(() => {
@@ -44,6 +48,39 @@ export default function Settings() {
     value: SettingsType[K],
   ) => setDraft({ ...values, [key]: value });
   const sshKeyPath = values.sshKeyPath || "~/.ssh/id_ed25519_gungun";
+  const runAction = (id: string, action: () => Promise<unknown>, success = "") => {
+    void run(async () => {
+      setPendingAction(id);
+      try {
+        await action();
+      } finally {
+        setPendingAction(null);
+      }
+    }, success);
+  };
+  const tailscale = tailscaleResult && typeof tailscaleResult === "object"
+    ? tailscaleResult as {
+        available?: boolean;
+        error?: string;
+        BackendState?: string;
+        Self?: { HostName?: string; TailscaleIPs?: string[] };
+      }
+    : null;
+  const tailscaleConnected = !!tailscale && tailscale.available !== false && !tailscale.error && tailscale.BackendState === "Running";
+  const tailscaleTitle = !tailscale
+    ? ""
+    : tailscale.available === false
+      ? "未检测到本机 Tailscale"
+      : tailscaleConnected
+        ? "Tailscale 已连接"
+        : "Tailscale 已安装，但尚未连接";
+  const tailscaleDescription = !tailscale
+    ? ""
+    : tailscale.available === false
+      ? "没有找到本机 tailscale 命令。请先安装并启动 Tailscale 客户端。"
+      : tailscaleConnected
+        ? `${tailscale.Self?.HostName || "本机"} · ${(tailscale.Self?.TailscaleIPs || []).join("、") || "已加入 Tailnet"}`
+        : tailscale.error || `当前状态：${tailscale.BackendState || "未知"}`;
   return (
     <>
       <PageHeader
@@ -53,7 +90,7 @@ export default function Settings() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void run(async () => {
+          runAction("save-settings", async () => {
             await call("saveSettings", values);
             setDraft(null);
           }, "设置已保存");
@@ -138,15 +175,36 @@ export default function Settings() {
           </div>
           <Button
             type="button"
+            loading={pendingAction === "cloudflare"}
+            disabled={pendingAction !== null}
             onClick={() => {
-              void run(async () => {
-                await call("saveSettings", values);
-                setResult(await call("zones"));
+              setCloudflareResult(null);
+              runAction("cloudflare", async () => {
+                try {
+                  await call("saveSettings", values);
+                  const zones = await call<Array<{ id: string; name: string }>>("zones");
+                  setCloudflareResult({
+                    tone: "success",
+                    message: `连接成功，已读取 ${zones.length} 个 Cloudflare Zone`,
+                  });
+                } catch (error) {
+                  setCloudflareResult({
+                    tone: "error",
+                    message: String(error instanceof Error ? error.message : error),
+                  });
+                  throw error;
+                }
               }, "Cloudflare 连接成功");
             }}
           >
-            保存并读取 Zone
+            {pendingAction === "cloudflare" ? "正在读取 Zone…" : "保存并读取 Zone"}
           </Button>
+          {cloudflareResult && (
+            <div className={`inline-status-panel ${cloudflareResult.tone}`}>
+              {cloudflareResult.tone === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+              <span>{cloudflareResult.message}</span>
+            </div>
+          )}
         </section>
         <section className="section settings-section">
           <h2>测速</h2>
@@ -222,15 +280,16 @@ export default function Settings() {
               />
               <Button
                 type="button"
-                onClick={() => {
-                  void run(async () => {
-                    const path = await call<string | null>("chooseKey");
-                    if (path) {
-                      setDraft({ ...values, sshKeyPath: path });
-                      setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path }));
-                    }
-                  });
-                }}
+                loading={pendingAction === "choose-key"}
+                disabled={pendingAction !== null}
+                onClick={() => runAction("choose-key", async () => {
+                  const path = await call<string | null>("chooseKey");
+                  if (path) {
+                    setDraft({ ...values, sshKeyPath: path });
+                    setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path }));
+                    setSshMessage("已切换为所选私钥，请保存设置后使用。");
+                  }
+                })}
               >
                 选择已有密钥
               </Button>
@@ -246,48 +305,66 @@ export default function Settings() {
           <div className="toolbar wrap">
             <Button
               type="button"
-              disabled={!!keyStatus?.privateExists || !!keyStatus?.publicExists}
-              onClick={() => {
-                void run(async () => {
-                  const generated = await call<SSHKeyCandidate>("generateKey", { path: sshKeyPath });
-                  setResult(generated);
-                  setDraft({ ...values, sshKeyPath: generated.path });
-                  setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: generated.path }));
-                }, "Gungun 默认 SSH 密钥已生成");
-              }}
+              disabled={!!keyStatus?.privateExists || !!keyStatus?.publicExists || pendingAction !== null}
+              loading={pendingAction === "generate-key"}
+              onClick={() => runAction("generate-key", async () => {
+                const generated = await call<SSHKeyCandidate>("generateKey", { path: sshKeyPath });
+                setDraft({ ...values, sshKeyPath: generated.path });
+                setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: generated.path }));
+                setSshMessage(`默认 SSH 密钥已生成：${generated.path}`);
+              }, "Gungun 默认 SSH 密钥已生成")}
             >
-              生成默认密钥
+              {pendingAction === "generate-key" ? "正在生成…" : "生成默认密钥"}
             </Button>
             <Button
               type="button"
-              disabled={!keyStatus?.exists}
-              onClick={() => {
-                void run(async () => {
-                  const candidate = await call<SSHKeyCandidate>("rotateKey", { path: sshKeyPath });
-                  setRotationCandidate(candidate);
-                  setResult({ message: "轮换密钥已生成，尚未切换默认密钥", ...candidate });
-                }, "轮换密钥已生成；旧密钥仍在使用");
-              }}
+              disabled={!keyStatus?.exists || pendingAction !== null}
+              loading={pendingAction === "rotate-key"}
+              onClick={() => runAction("rotate-key", async () => {
+                const candidate = await call<SSHKeyCandidate>("rotateKey", { path: sshKeyPath });
+                setRotationCandidate(candidate);
+                setSshMessage("轮换密钥已生成，但尚未切换默认密钥。请先将新公钥安装到 VPS。");
+              }, "轮换密钥已生成；旧密钥仍在使用")}
             >
               轮换密钥
             </Button>
             <Button
               type="button"
+              disabled={pendingAction !== null}
+              loading={pendingAction === "tailscale"}
               onClick={() => {
-                void run(async () => setResult(await call("tailscale")));
+                setTailscaleResult(null);
+                runAction("tailscale", async () => setTailscaleResult(await call("tailscale")));
               }}
             >
-              检查本机 Tailscale
+              {pendingAction === "tailscale" ? "正在检测…" : "检查本机 Tailscale"}
             </Button>
             <Button
               type="button"
-              onClick={() => {
-                void run(async () => setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: sshKeyPath })));
-              }}
+              disabled={pendingAction !== null}
+              loading={pendingAction === "check-key"}
+              onClick={() => runAction("check-key", async () => {
+                setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: sshKeyPath }));
+                setSshMessage("本机 SSH 密钥状态检查完成。");
+              })}
             >
               检查密钥
             </Button>
           </div>
+          {sshMessage && <div className="inline-status-panel success"><CheckCircle2 size={16} /><span>{sshMessage}</span></div>}
+          {tailscale && (
+            <div className={`inline-status-panel ${tailscaleConnected ? "success" : tailscale.available === false ? "error" : "warning"}`}>
+              {tailscaleConnected ? <CheckCircle2 size={16} /> : tailscale.available === false ? <AlertCircle size={16} /> : <Info size={16} />}
+              <div className="inline-status-content">
+                <strong>{tailscaleTitle}</strong>
+                <p>{tailscaleDescription}</p>
+                <details>
+                  <summary>查看诊断信息</summary>
+                  <pre className="output">{pretty(tailscaleResult)}</pre>
+                </details>
+              </div>
+            </div>
+          )}
           {rotationCandidate && (
             <div className="section rounded-lg border p-4">
               <h3 className="font-medium">待切换的新密钥</h3>
@@ -299,16 +376,16 @@ export default function Settings() {
               <div className="toolbar">
                 <Button
                   type="button"
-                  onClick={() => {
-                    void run(async () => {
-                      if (!window.confirm("请确认新公钥已安装到所有需要使用它的 VPS，并且新密钥登录测试成功。继续切换默认密钥？")) return;
-                      const activated = await call("activateSSHKey", { path: rotationCandidate.path });
-                      setResult(activated);
-                      setDraft({ ...values, sshKeyPath: rotationCandidate.path });
-                      setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: rotationCandidate.path }));
-                      setRotationCandidate(null);
-                    }, "默认 SSH 密钥已切换；旧私钥仍保留");
-                  }}
+                  loading={pendingAction === "activate-key"}
+                  disabled={pendingAction !== null}
+                  onClick={() => runAction("activate-key", async () => {
+                    if (!window.confirm("请确认新公钥已安装到所有需要使用它的 VPS，并且新密钥登录测试成功。继续切换默认密钥？")) return;
+                    await call("activateSSHKey", { path: rotationCandidate.path });
+                    setDraft({ ...values, sshKeyPath: rotationCandidate.path });
+                    setKeyStatus(await call<SSHKeyStatus>("sshKeyStatus", { path: rotationCandidate.path }));
+                    setRotationCandidate(null);
+                    setSshMessage("默认 SSH 密钥已切换；旧私钥仍保留。");
+                  }, "默认 SSH 密钥已切换；旧私钥仍保留")}
                 >
                   设为默认密钥
                 </Button>
@@ -323,7 +400,7 @@ export default function Settings() {
           </p>
         </section>
         <div className="form-actions">
-          <Button type="submit" variant="default">
+          <Button type="submit" variant="default" loading={pendingAction === "save-settings"} disabled={pendingAction !== null}>
             保存设置
           </Button>
         </div>
@@ -333,22 +410,21 @@ export default function Settings() {
         <p>备份包含节点凭据和 Cloudflare Key，请保存到可信位置。</p>
         <div className="toolbar">
           <Button
-            onClick={() => {
-              void run(() => call("exportData"), "数据已导出");
-            }}
+            loading={pendingAction === "export-data"}
+            disabled={pendingAction !== null}
+            onClick={() => runAction("export-data", () => call("exportData"), "数据已导出")}
           >
             导出完整备份
           </Button>
           <Button
-            onClick={() => {
-              void run(() => call("importData"), "已合并导入备份");
-            }}
+            loading={pendingAction === "import-data"}
+            disabled={pendingAction !== null}
+            onClick={() => runAction("import-data", () => call("importData"), "已合并导入备份")}
           >
             导入备份
           </Button>
         </div>
       </section>
-      {result !== null && <pre className="output">{pretty(result)}</pre>}
     </>
   );
 }

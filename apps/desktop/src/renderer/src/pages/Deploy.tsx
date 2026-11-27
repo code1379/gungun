@@ -30,6 +30,8 @@ export default function Deploy() {
   const [zoneMessage, setZoneMessage] = useState("");
   const [remoteStatus, setRemoteStatus] = useState<"idle" | "loading" | "ready" | "missing-fq" | "error">("idle");
   const [remoteError, setRemoteError] = useState("");
+  const [installingFq, setInstallingFq] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
   const selectedZone = zones.find((zone) => zone.id === zoneId);
@@ -100,7 +102,9 @@ export default function Deploy() {
                 aria-pressed={vpsId === v.id}
                 onClick={() => selectHost(v.id)}
               >
-                <Server size={18} />
+                {vpsId === v.id && remoteStatus === "loading"
+                  ? <LoaderCircle className="animate-spin" size={18} />
+                  : <Server size={18} />}
                 <span>
                   {v.name}
                   <small>{v.kind === "nat" ? "NAT VPS" : "公网 VPS"}</small>
@@ -115,11 +119,23 @@ export default function Deploy() {
                 title="这台 VPS 尚未安装 fq"
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
-                    <Button onClick={() => void run(() => call("installFq", vps.id), "fq 安装任务已加入任务中心")}>
-                      安装 fq
+                    <Button
+                      loading={installingFq}
+                      disabled={installingFq}
+                      onClick={() => {
+                        void run(async () => {
+                          setInstallingFq(true);
+                          try {
+                            await call("installFq", vps.id);
+                          } finally {
+                            setInstallingFq(false);
+                          }
+                        }, "fq 安装任务已加入任务中心");
+                      }}
+                    >
+                      {installingFq ? "正在加入任务…" : "安装 fq"}
                     </Button>
-                    <Button variant="outline" onClick={() => readRemote(vps.id)}>
-                      <RefreshCw size={14} />
+                    <Button variant="outline" loading={remoteStatus === "loading"} disabled={remoteStatus === "loading"} onClick={() => readRemote(vps.id)}>
                       重新读取
                     </Button>
                   </div>
@@ -134,7 +150,7 @@ export default function Deploy() {
             ) : vps && remoteStatus === "error" ? (
               <Empty
                 title="读取 VPS 配置失败"
-                action={<Button onClick={() => readRemote(vps.id)}>重试</Button>}
+                action={<Button loading={remoteStatus === "loading"} disabled={remoteStatus === "loading"} onClick={() => readRemote(vps.id)}>重试</Button>}
               >
                 {remoteError}
               </Empty>
@@ -143,6 +159,8 @@ export default function Deploy() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   void run(async () => {
+                    setDeploying(true);
+                    try {
                     if (service.protocol !== "vless-reality") {
                       const selectedZone = zones.find((zone) => zone.id === zoneId);
                       if (!vps.zoneName && !selectedZone)
@@ -157,6 +175,9 @@ export default function Deploy() {
                       }
                     }
                     await call("deploy", { vpsId: vps.id, service });
+                    } finally {
+                      setDeploying(false);
+                    }
                   }, "部署任务已加入队列，请在任务中心查看执行与回滚结果");
                 }}
               >
@@ -406,9 +427,9 @@ export default function Deploy() {
                   </p>
                 )}
                 <div className="form-actions">
-                  <Button type="submit" variant="default">
+                  <Button type="submit" variant="default" loading={deploying} disabled={deploying}>
                     <Rocket size={16} />
-                    部署到 {vps.name}
+                    {deploying ? "正在提交部署…" : `部署到 ${vps.name}`}
                   </Button>
                 </div>
               </form>

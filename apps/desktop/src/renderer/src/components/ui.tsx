@@ -20,7 +20,7 @@ import { Checkbox } from "./ui/checkbox";
 import { SelectField as Select } from "./select-field";
 import { Badge as BadgePrimitive } from "./ui/badge";
 import { cn } from "../lib/utils";
-import { X, AlertTriangle, Check, Server, CircleHelp, ExternalLink } from "lucide-react";
+import { X, AlertTriangle, Check, Server, CircleHelp, ExternalLink, LoaderCircle } from "lucide-react";
 import { errorText, useApp } from "../api";
 import { Button as StyledButton } from "./ui/button";
 export { Input, Textarea, Checkbox, Select };
@@ -39,13 +39,19 @@ export function Button({
   variant = "secondary",
   className,
   size,
+  loading = false,
+  disabled,
+  children,
   ...props
 }: Omit<ComponentProps<typeof StyledButton>, "variant"> & {
   variant?: ComponentProps<typeof StyledButton>["variant"] | "danger";
+  loading?: boolean;
 }) {
   return (
     <StyledButton
       {...props}
+      disabled={disabled || loading}
+      aria-busy={loading}
       variant={variant === "danger" ? "destructive" : variant}
       className={className}
       size={
@@ -54,7 +60,10 @@ export function Button({
           ? "icon"
           : "default")
       }
-    />
+    >
+      {loading && <LoaderCircle size={14} className="mr-1 shrink-0 animate-spin" />}
+      {children}
+    </StyledButton>
   );
 }
 export function Modal({

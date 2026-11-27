@@ -270,9 +270,11 @@
   }
   .workspace {
     min-width: 0;
+    min-height: 0;
     flex: 1;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
   .topbar {
     height: 56px;
@@ -288,9 +290,28 @@
     font-size: 11px;
   }
   .page-content {
+    min-width: 0;
+    min-height: 0;
     padding: 32px 36px 60px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     flex: 1;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  .page-content::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .page-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .page-content::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+    background-clip: content-box;
   }
   .actions {
     display: flex;
@@ -459,8 +480,11 @@
   }
   .form-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0 20px;
+  }
+  .form-grid > * {
+    min-width: 0;
   }
   .form-actions {
     display: flex;
@@ -494,6 +518,112 @@
     white-space: pre-wrap;
     word-break: break-word;
     margin-top: 20px;
+  }
+  .inline-status-panel {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 12px;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .inline-status-panel > svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+  }
+  .inline-status-panel.success {
+    color: var(--good);
+    border-color: color-mix(in srgb, var(--good) 35%, var(--border));
+    background: color-mix(in srgb, var(--good) 6%, var(--surface));
+  }
+  .inline-status-panel.error {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+  }
+  .inline-status-panel.warning {
+    color: var(--muted-foreground);
+    border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+  }
+  .inline-status-content {
+    min-width: 0;
+    flex: 1;
+  }
+  .inline-status-content strong {
+    display: block;
+    color: var(--foreground);
+    margin-bottom: 2px;
+  }
+  .inline-status-content details,
+  .ssh-test-result details {
+    margin-top: 7px;
+  }
+  .inline-status-content summary,
+  .ssh-test-result summary,
+  .result-disclosure summary {
+    cursor: pointer;
+    color: var(--muted-foreground);
+    font-size: 11px;
+  }
+  .inline-status-content .output {
+    margin-top: 8px;
+  }
+  .result-disclosure {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 10px 13px;
+  }
+  .result-disclosure .output {
+    margin-top: 10px;
+  }
+  .vps-form-actions {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .ssh-test-result {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 180px;
+    max-width: min(480px, 48%);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .ssh-test-result > svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
+  }
+  .ssh-test-result.success {
+    color: var(--good);
+  }
+  .ssh-test-result.failed {
+    color: var(--danger);
+  }
+  .ssh-test-result-content {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .ssh-test-result-content strong {
+    color: var(--foreground);
+  }
+  .ssh-test-result-content span {
+    color: var(--muted-foreground);
+    overflow-wrap: anywhere;
+  }
+  .ssh-test-result-content pre {
+    margin-top: 7px;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--muted);
+    white-space: pre-wrap;
   }
   .feedback {
     position: fixed;
@@ -562,8 +692,11 @@
   }
   .deploy-layout {
     display: grid;
-    grid-template-columns: 195px 1fr;
+    grid-template-columns: 195px minmax(0, 1fr);
     gap: 28px;
+  }
+  .deploy-form {
+    min-width: 0;
   }
   .deploy-hosts {
     border-right: 1px solid var(--border);
@@ -1063,6 +1196,11 @@
     .deploy-layout {
       grid-template-columns: 165px minmax(0, 1fr);
       gap: 20px;
+    }
+    .ssh-test-result {
+      max-width: 100%;
+      flex-basis: 100%;
+      order: 3;
     }
     .nodes-layout {
       grid-template-columns: 190px minmax(0, 1fr);
