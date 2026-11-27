@@ -34,6 +34,31 @@ export default function Deploy() {
   const [installTaskId, setInstallTaskId] = useState<string | null>(null);
   const [bindingZone, setBindingZone] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  useEffect(() => {
+    if (!data || !installTaskId) return;
+    const task = data.tasks.find((item) => item.id === installTaskId);
+    if (!task || ["queued", "running"].includes(task.state)) return;
+    setInstallingFq(false);
+    setInstallTaskId(null);
+    if (task.state !== "success" || task.vpsId !== vpsId) return;
+    setRemote(null);
+    setRemoteError("");
+    setRemoteStatus("loading");
+    void call<RemoteState>("remoteRead", { vpsId, action: "config" })
+      .then((state) => {
+        setRemote(state);
+        setRemoteStatus("ready");
+      })
+      .catch((error) => {
+        const message = String(error);
+        if (message.includes("/usr/local/bin/fq: not found") || message.includes("fq: not found")) {
+          setRemoteStatus("missing-fq");
+          return;
+        }
+        setRemoteError(message);
+        setRemoteStatus("error");
+      });
+  }, [data?.tasks, installTaskId, vpsId, call]);
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
   const selectedZone = zones.find((zone) => zone.id === zoneId);
@@ -105,31 +130,7 @@ export default function Deploy() {
     }, "Cloudflare Zone 已绑定到 VPS");
   };
 
-  useEffect(() => {
-    if (!data || !installTaskId) return;
-    const task = data.tasks.find((item) => item.id === installTaskId);
-    if (!task || ["queued", "running"].includes(task.state)) return;
-    setInstallingFq(false);
-    setInstallTaskId(null);
-    if (task.state !== "success" || task.vpsId !== vpsId) return;
-    setRemote(null);
-    setRemoteError("");
-    setRemoteStatus("loading");
-    void call<RemoteState>("remoteRead", { vpsId, action: "config" })
-      .then((state) => {
-        setRemote(state);
-        setRemoteStatus("ready");
-      })
-      .catch((error) => {
-        const message = String(error);
-        if (message.includes("/usr/local/bin/fq: not found") || message.includes("fq: not found")) {
-          setRemoteStatus("missing-fq");
-          return;
-        }
-        setRemoteError(message);
-        setRemoteStatus("error");
-      });
-  }, [data?.tasks, installTaskId, vpsId, call]);
+
   return (
     <>
       <PageHeader
