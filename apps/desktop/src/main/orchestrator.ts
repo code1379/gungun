@@ -40,8 +40,13 @@ export class Orchestrator {
           : null;
     if (!target) throw new Error(`不支持的 CPU：${arch}`);
     const remote = `/tmp/gungun-fq-${randomUUID()}`;
-    await step("上传 fq", () =>
-      this.ssh.upload(vps, join(this.resources, `fq-linux-${target}`), remote),
+    await step("上传 fq", (reportTransfer) =>
+      this.ssh.upload(
+        vps,
+        join(this.resources, `fq-linux-${target}`),
+        remote,
+        reportTransfer,
+      ),
     );
     await step("安装 fq 与服务单元", async () => {
       await this.ssh.run(
