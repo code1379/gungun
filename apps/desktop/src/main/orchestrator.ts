@@ -187,7 +187,10 @@ export class Orchestrator {
           service.edgeScheme ||= "https";
           if (!service.edgePort) service.edgePort = service.edgeScheme === "http" ? 80 : 443;
         }
-        if (service.access !== "direct") {
+        if (
+          service.access !== "direct" &&
+          !(service.access === "cdn" && service.edgeScheme === "http")
+        ) {
           const current = service;
           const cf = new Cloudflare(this.store.settings());
           service.domain = await step("检查 Cloudflare 边缘证书覆盖", () =>
