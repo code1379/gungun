@@ -415,7 +415,7 @@ export default function Vps() {
               </Field>
             </div>
             {test && <pre className="output">{test}</pre>}
-            <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-background py-3">
+            <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-popover py-3">
               <Button
                 type="button"
                 onClick={() => {
