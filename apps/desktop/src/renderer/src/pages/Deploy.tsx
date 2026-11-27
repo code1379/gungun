@@ -181,7 +181,7 @@ export default function Deploy() {
     <>
       <PageHeader
         title="部署中心"
-        description="逐个添加协议，已有协议与远程配置保持完整。"
+        description="选择多个协议并分别配置，一次提交批量部署；已有协议与远程配置保持完整。"
       />
       {data.vps.length ? (
         <div className="deploy-layout">
@@ -339,7 +339,7 @@ export default function Deploy() {
                         accountId: selectedZone.account.id,
                       });
                     }
-                    if (vps.kind === "nat" && (!commonPorts.internal || !commonPorts.public)) throw new Error("NAT VPS 请填写内部监听端口和公网映射端口起始值");
+                    if (vps.kind === "nat" && (!commonPorts.internal || (selectedCombinations.some(({ access }) => access !== "argo") && !commonPorts.public))) throw new Error("NAT VPS 请填写内部监听端口起始值，以及非 Argo 服务所需的公网映射端口起始值");
                     const occupied = new Set([...(remote?.services || []).map((item) => item.port), ...(remote?.websites || []).map((item) => item.port)]);
                     const zoneName = selectedZone?.name || vps.zoneName;
                     const services = selectedCombinations.map(({ protocol, access }, index) => {
