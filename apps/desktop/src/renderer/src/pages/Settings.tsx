@@ -110,12 +110,12 @@ export default function Settings() {
                 steps: [
                   "登录 Cloudflare 控制台，点击右上角头像。",
                   "打开 My Profile（个人资料）。",
-                  "进入 API Tokens 页面。",
+                  "进入 API Keys 页面（不要选择 API Tokens）。",
                   "在 Global API Key 一栏点击 View，完成身份验证后复制密钥。",
                   "将密钥粘贴到这里，点击「保存并读取 Zone」验证。",
                 ],
-                url: "https://dash.cloudflare.com/profile/api-tokens",
-                linkLabel: "打开 API Tokens 页面",
+                url: "https://dash.cloudflare.com/profile/api-keys",
+                linkLabel: "打开 API Keys 页面",
               }}
             >
               <Input
