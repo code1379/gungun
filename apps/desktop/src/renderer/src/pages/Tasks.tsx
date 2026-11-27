@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ChevronDown, XCircle } from "lucide-react";
 import { useApp } from "../api";
 import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
@@ -25,6 +26,7 @@ const labels = {
 
 export default function Tasks() {
   const { data, call, run } = useApp();
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
   if (!data) return null;
 
   return (
@@ -37,10 +39,21 @@ export default function Tasks() {
         <div className="tasks-list">
           {[...data.tasks].reverse().map((task) => {
             const cancellable = ["queued", "running", "cancelling"].includes(task.state);
+            const expanded = expandedTasks[task.id] ?? false;
             return (
               <section className="task-card" key={task.id}>
                 <div className="task-card-layout">
-                  <details className="task-card-disclosure">
+                  <details
+                    className="task-card-disclosure"
+                    onToggle={(event) => {
+                      const open = event.currentTarget.open;
+                      setExpandedTasks((current) =>
+                        current[task.id] === open
+                          ? current
+                          : { ...current, [task.id]: open },
+                      );
+                    }}
+                  >
                     <summary className="task-card-summary">
                       <div className="task-summary-main">
                         <div className="task-summary-title">
@@ -72,7 +85,7 @@ export default function Tasks() {
                           </span>
                         </div>
                       </div>
-                      {["queued", "running", "cancelling"].includes(task.state) && (
+                      {!expanded && ["queued", "running", "cancelling"].includes(task.state) && (
                         <Progress
                           value={task.progress}
                           max={100}
@@ -81,11 +94,15 @@ export default function Tasks() {
                       )}
                     </summary>
                     <div className="task-card-details">
-                      <div className="task-progress-meta">
-                        <span>执行进度</span>
-                        <strong>{task.progress}%</strong>
-                      </div>
-                      <Progress value={task.progress} max={100} aria-label="任务进度" />
+                      {expanded && (
+                        <>
+                          <div className="task-progress-meta">
+                            <span>执行进度</span>
+                            <strong>{task.progress}%</strong>
+                          </div>
+                          <Progress value={task.progress} max={100} aria-label="任务进度" />
+                        </>
+                      )}
                       <div className="task-steps">
                         {task.steps.map((step, index) => (
                           <div key={index} className={`task-step step-${step.state}`}>
