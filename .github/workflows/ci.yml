@@ -1,8 +1,7 @@
 name: CI
+# Automatic CI is intentionally paused during active development.
+# Run this workflow manually only when explicitly requested.
 on:
-  push:
-    branches: [main, development]
-  pull_request:
   workflow_dispatch:
 defaults:
   run:
