@@ -183,8 +183,8 @@ func TestArgoExport(t *testing.T) {
 		t.Fatal(nodes)
 	}
 	in := SingBoxConfig(s, "/etc/gungun")["inbounds"].([]any)[0].(M)
-	if in["listen"] != "127.0.0.1" || in["tls"] != nil {
-		t.Fatal("Argo needs public TLS listener")
+	if in["listen"] != "::" || in["tls"] == nil || in["listen_port"] != 20000 {
+		t.Fatal("Argo must reuse the shared TLS VLESS listener")
 	}
 }
 func TestApplyRollback(t *testing.T) {
