@@ -73,6 +73,31 @@ export class Orchestrator {
   ) {
     this.certificates = new Certificates(store, ssh, certDir);
   }
+  private async ensureFqCurrent(vps: VPS, step: Step) {
+    const arch = (await this.ssh.run(vps, "uname -m")).trim();
+    const target = arch === "x86_64" ? "amd64" : ["aarch64", "arm64"].includes(arch) ? "arm64" : null;
+    if (!target) throw new Error(`不支持的 CPU：${arch}`);
+    const local = join(this.resources, `fq-linux-${target}`);
+    const binary = await readFile(local);
+    const digest = createHash("sha256").update(binary).digest("hex");
+    let current = "";
+    try {
+      current = (await this.ssh.run(vps, "sha256sum /usr/local/bin/fq 2>/dev/null | awk '{print $1}'")).trim();
+    } catch { /* Missing fq is handled by the caller's normal install flow. */ }
+    if (current === digest) return;
+    const remote = `/tmp/gungun-fq-update-${randomUUID()}`;
+    const staged = `/usr/local/bin/.fq-update-${randomUUID()}`;
+    try {
+      await step("上传新版 fq 管理器", (report) => this.ssh.upload(vps, local, remote, report));
+      await step("原子更新 fq 管理器", () => this.ssh.run(
+        vps,
+        `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 ${shellQuote(remote)} ${shellQuote(staged)} && ${vps.username === "root" ? "" : "sudo -n "}mv -f ${shellQuote(staged)} /usr/local/bin/fq && rm -f ${shellQuote(remote)}`,
+      ));
+    } finally {
+      await this.ssh.run(vps, `rm -f ${shellQuote(remote)} ${shellQuote(staged)}`).catch(() => {});
+    }
+  }
+
   async install(vps: VPS, step: Step, signal: AbortSignal) {
     await step("连接 VPS 并识别 CPU", (_report, stepSignal) => this.ssh.test(vps).then((result) => {
       if (stepSignal.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
@@ -237,6 +262,7 @@ export class Orchestrator {
     const undo: (() => Promise<void>)[] = [];
     let vps = originalVps;
     try {
+      await this.ensureFqCurrent(originalVps, step);
       let state = await step("读取远程真实配置", () =>
         this.ssh.state(originalVps),
       );
@@ -538,6 +564,7 @@ export class Orchestrator {
     if (website) website = websiteSchema.parse(website);
     const undo: (() => Promise<void>)[] = [];
     try {
+      await this.ensureFqCurrent(vps, step);
       let state = await step("读取远程真实配置", () => this.ssh.state(vps));
       state = {
         ...state,
@@ -776,7 +803,8 @@ export class Orchestrator {
       let vps = originalVps;
       try {
         if (!vps.zoneId || !vps.zoneName || !vps.accountId) throw new Error("请先绑定 Cloudflare Zone 和 Account");
-        let state = await step("读取远程真实配置", () => this.ssh.state(vps));
+        await this.ensureFqCurrent(vps, step);
+      let state = await step("读取远程真实配置", () => this.ssh.state(vps));
         state = { ...state, schemaVersion: 1, hostId: vps.id, hostName: vps.name, kind: vps.kind, publicAddress: vps.publicAddress, namespace: vps.namespace, zoneName: vps.zoneName };
         const previousSignature = tunnelIngressSignature(state);
         const backup = await step("备份远程配置", () => this.ssh.fq<{ backupId: string }>(vps, "backup"));
@@ -832,6 +860,7 @@ export class Orchestrator {
   }
   async remove(vps: VPS, kind: "service" | "website", id: string, step: Step) {
     const action = async () => {
+      await this.ensureFqCurrent(vps, step);
       const state = await step("读取真实配置", () => this.ssh.state(vps));
       const previousTunnelSignature = tunnelIngressSignature(state);
       const backup = await step("备份配置", () =>
