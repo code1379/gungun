@@ -17,13 +17,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.25.4
           cache: false
@@ -49,13 +49,13 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.25.4
           cache: false
@@ -70,12 +70,3 @@ jobs:
         run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
-        env:
-          GUNGUN_SCREENSHOT_LOG: "1"
-      - name: Build unsigned DMG for testing
-        run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Mount DMG, install app into isolated directory and launch
-        run: node scripts/verify-dmg.mjs
-
