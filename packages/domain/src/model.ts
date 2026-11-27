@@ -183,6 +183,11 @@ export interface TaskStep {
   name: string;
   state: "running" | "success" | "failed";
   message?: string;
+  transfer?: {
+    transferred: number;
+    total: number;
+    percent: number;
+  };
   at: string;
 }
 export interface Task {
