@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Rocket, Server, Shield, Network } from "lucide-react";
+import { Rocket, Server, Shield, Network, LoaderCircle, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { RemoteState, Service, VPS } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Empty, Field, PageHeader, protocolLabels, Select, Input } from "../components/ui";
@@ -26,19 +26,61 @@ export default function Deploy() {
   const [remote, setRemote] = useState<RemoteState | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [zoneId, setZoneId] = useState("");
+  const [zoneStatus, setZoneStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [zoneMessage, setZoneMessage] = useState("");
+  const [remoteStatus, setRemoteStatus] = useState<"idle" | "loading" | "ready" | "missing-fq" | "error">("idle");
+  const [remoteError, setRemoteError] = useState("");
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
+  const selectedZone = zones.find((zone) => zone.id === zoneId);
+  const activeZoneName = selectedZone?.name || vps?.zoneName || "";
+  const domainPrefix = service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node";
+  const generatedDomain = activeZoneName && vps
+    ? `${domainPrefix}.${vps.namespace}.${activeZoneName}`
+    : "";
   const update = <K extends keyof Service>(key: K, value: Service[K]) =>
     setService((prev) => ({ ...prev, [key]: value }));
-  const selectHost = (id: string) => {
-    setVpsId(id);
-    setZoneId(data.vps.find((v) => v.id === id)?.zoneId || "");
+  const readRemote = (id: string) => {
     setRemote(null);
-    void run(async () =>
-      setRemote(
-        await call<RemoteState>("remoteRead", { vpsId: id, action: "config" }),
-      ),
-    );
+    setRemoteError("");
+    setRemoteStatus("loading");
+    void run(async () => {
+      try {
+        const state = await call<RemoteState>("remoteRead", { vpsId: id, action: "config" });
+        setRemote(state);
+        setRemoteStatus("ready");
+      } catch (error) {
+        const message = String(error);
+        if (/\/usr\/local\/bin\/fq: not found|fq: not found/.test(message)) {
+          setRemoteStatus("missing-fq");
+          return;
+        }
+        setRemoteError(message);
+        setRemoteStatus("error");
+      }
+    });
+  };
+  const selectHost = (id: string) => {
+    const host = data.vps.find((v) => v.id === id);
+    setVpsId(id);
+    setZoneId(host?.zoneId || "");
+    setZoneStatus(host?.zoneId ? "success" : "idle");
+    setZoneMessage(host?.zoneName ? `当前绑定：${host.zoneName}` : "");
+    readRemote(id);
+  };
+  const readZones = async () => {
+    setZoneStatus("loading");
+    setZoneMessage("正在读取 Cloudflare Zone…");
+    try {
+      const result = await call<Zone[]>("zones");
+      setZones(result);
+      setZoneStatus("success");
+      setZoneMessage(`已读取 ${result.length} 个域名`);
+    } catch (error) {
+      setZoneStatus("error");
+      setZoneMessage("读取失败");
+      throw error;
+    }
   };
   return (
     <>
@@ -50,10 +92,12 @@ export default function Deploy() {
         <div className="deploy-layout">
           <aside className="deploy-hosts">
             <h2>选择目标主机</h2>
+            <div className="deploy-hosts-list">
             {data.vps.map((v) => (
               <button
                 key={v.id}
                 className={`deploy-host ${vpsId === v.id ? "active" : ""}`}
+                aria-pressed={vpsId === v.id}
                 onClick={() => selectHost(v.id)}
               >
                 <Server size={18} />
@@ -63,9 +107,38 @@ export default function Deploy() {
                 </span>
               </button>
             ))}
+            </div>
           </aside>
           <section className="deploy-form">
-            {vps ? (
+            {vps && remoteStatus === "missing-fq" ? (
+              <Empty
+                title="这台 VPS 尚未安装 fq"
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button onClick={() => void run(() => call("installFq", vps.id), "fq 安装任务已加入任务中心")}>
+                      安装 fq
+                    </Button>
+                    <Button variant="outline" onClick={() => readRemote(vps.id)}>
+                      <RefreshCw size={14} />
+                      重新读取
+                    </Button>
+                  </div>
+                }
+              >
+                部署中心需要通过 SSH 调用 VPS 上的 fq。先安装 fq，完成后重新读取远程配置。
+              </Empty>
+            ) : vps && remoteStatus === "loading" ? (
+              <Empty title="正在读取 VPS 配置">
+                正在通过 SSH 读取这台 VPS 的协议和远程服务状态…
+              </Empty>
+            ) : vps && remoteStatus === "error" ? (
+              <Empty
+                title="读取 VPS 配置失败"
+                action={<Button onClick={() => readRemote(vps.id)}>重试</Button>}
+              >
+                {remoteError}
+              </Empty>
+            ) : vps && remoteStatus === "ready" ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -123,14 +196,14 @@ export default function Deploy() {
                   {service.protocol !== "vless-reality" && (
                     <Field
                       label="Cloudflare Zone"
-                      hint={vps.zoneName ? "当前绑定：" + vps.zoneName : "首次部署需要选择托管该域名的 Cloudflare Zone。选择后会保存到这台 VPS。"}
+                      hint={activeZoneName ? `当前选择：${activeZoneName}。部署后会绑定到这台 VPS。` : "首次部署时在这里选择 Cloudflare Zone；选择后会保存到这台 VPS。"}
                       help={{
                         title: "选择 Cloudflare Zone",
                         description: "Zone 是 Cloudflare 托管的域名区域，例如 example.com。Gungun 使用设置中保存的 Global API Key 读取可用 Zone，并在部署时创建 DNS、证书挑战和 Tunnel 配置。",
                         steps: [
                           "先在「设置 → Cloudflare」填写账号邮箱与 Global API Key。",
                           "点击「读取 Zone」加载当前账号有权管理的域名。",
-                          "选择准备给这台 VPS 使用的域名区域。",
+                          "在部署中心选择准备给这台 VPS 使用的域名区域；不需要在 VPS 设置中另行配置。",
                           "Gungun 会把 Zone 绑定到这台 VPS，并使用自动生成的独立域名空间。",
                         ],
                         url: "https://dash.cloudflare.com/",
@@ -138,17 +211,31 @@ export default function Deploy() {
                       }}
                     >
                       <div className="input-action">
-                        <Select value={zoneId} onValueChange={setZoneId}>
+                        <Select value={zoneId} onValueChange={(value) => {
+                          setZoneId(value);
+                          const zone = zones.find((item) => item.id === value);
+                          setZoneStatus(value ? "success" : "idle");
+                          setZoneMessage(zone ? `已选择：${zone.name}` : "");
+                        }}>
                           <option value="">选择 Cloudflare Zone</option>
                           {vps.zoneId && !zones.some((z) => z.id === vps.zoneId) && (
                             <option value={vps.zoneId}>{vps.zoneName || vps.zoneId}</option>
                           )}
                           {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
                         </Select>
-                        <Button type="button" onClick={() => {
-                          void run(async () => setZones(await call("zones")));
-                        }}>读取 Zone</Button>
+                        <Button type="button" disabled={zoneStatus === "loading"} onClick={() => {
+                          void run(readZones, "Cloudflare Zone 读取成功");
+                        }}>
+                          {zoneStatus === "loading" ? <LoaderCircle className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+                          读取 Zone
+                        </Button>
                       </div>
+                      {zoneStatus !== "idle" && (
+                        <div className={`zone-read-status ${zoneStatus}`}>
+                          {zoneStatus === "loading" ? <LoaderCircle className="animate-spin" size={13} /> : zoneStatus === "error" ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+                          <span>{zoneMessage}</span>
+                        </div>
+                      )}
                     </Field>
                   )}
                   <Field label="接入方式">
@@ -231,17 +318,21 @@ export default function Deploy() {
                   )}
                   {service.protocol !== "vless-reality" && (
                     <Field
-                      label="域名"
+                      label="域名（可选）"
                       hint={
-                        vps.zoneName
-                          ? `留空自动使用 ${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`
-                          : "请先在 VPS 设置中选择 Cloudflare Zone 以申请证书。"
+                        service.domain
+                          ? "使用你填写的自定义域名；必须属于当前选择的 Cloudflare Zone。"
+                          : generatedDomain
+                            ? `留空自动生成：${generatedDomain}`
+                            : service.access === "direct"
+                              ? "可留空；如果需要 DNS 和证书，可先选择 Cloudflare Zone。"
+                              : "先在上方选择 Cloudflare Zone；域名无需手动填写，留空即可自动生成。"
                       }
                     >
                       <Input
                         value={service.domain}
                         onChange={(e) => update("domain", e.target.value)}
-                        placeholder="按 Edge 证书覆盖自动选择域名"
+                        placeholder={generatedDomain || "留空自动生成域名"}
                       />
                     </Field>
                   )}

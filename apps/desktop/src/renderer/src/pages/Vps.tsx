@@ -11,6 +11,7 @@ export default function Vps() {
   const [test, setTest] = useState("");
   const [detail, setDetail] = useState<unknown>(null);
   const [installingKey, setInstallingKey] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<Record<string, "connected" | "failed">>({});
   if (!data) return null;
   const current = data.vps.find((v) => v.id === selected);
   const set = <K extends keyof VPS>(k: K, v: VPS[K]) =>
@@ -24,31 +25,32 @@ export default function Vps() {
             ? "配置与节点以这台 VPS 的 fq 数据为准。"
             : "管理 SSH 连接、公网与 NAT 主机。"
         }
-        actions={
-          <>
-            {current && (
-              <Button
-                onClick={() => {
-                  setSelected(null);
-                  setDetail(null);
-                }}
-              >
-                <ChevronLeft size={15} />
-                所有主机
-              </Button>
-            )}
+        leading={
+          current ? (
             <Button
-              variant="default"
+              variant="ghost"
               onClick={() => {
-                setTest("");
-                setOverridePublicAddress(false);
-                void run(async () => setEditing(await call<VPS>("newVps")));
+                setSelected(null);
+                setDetail(null);
               }}
             >
-              <Plus size={16} />
-              添加 VPS
+              <ChevronLeft size={15} />
+              所有主机
             </Button>
-          </>
+          ) : undefined
+        }
+        actions={
+          <Button
+            variant="default"
+            onClick={() => {
+              setTest("");
+              setOverridePublicAddress(false);
+              void run(async () => setEditing(await call<VPS>("newVps")));
+            }}
+          >
+            <Plus size={16} />
+            添加 VPS
+          </Button>
         }
       />
       {current ? (
@@ -58,7 +60,19 @@ export default function Vps() {
               <Server size={25} />
             </div>
             <div className="grow">
-              <h2>{current.name}</h2>
+              <h2 className="flex items-center gap-2">
+                <span
+                  className={`ssh-status-dot ${connectionStatus[current.id] || "unknown"}`}
+                  title={
+                    connectionStatus[current.id] === "connected"
+                      ? "最近一次 SSH 测试成功"
+                      : connectionStatus[current.id] === "failed"
+                        ? "最近一次 SSH 测试失败"
+                        : "尚未测试 SSH 连接"
+                  }
+                />
+                {current.name}
+              </h2>
               <p>
                 {current.username}@{current.address}:{current.sshPort}
               </p>
@@ -208,7 +222,19 @@ export default function Vps() {
                 <Server size={21} />
               </div>
               <div className="grow">
-                <strong>{v.name}</strong>
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`ssh-status-dot ${connectionStatus[v.id] || "unknown"}`}
+                    title={
+                      connectionStatus[v.id] === "connected"
+                        ? "最近一次 SSH 测试成功"
+                        : connectionStatus[v.id] === "failed"
+                          ? "最近一次 SSH 测试失败"
+                          : "尚未测试 SSH 连接"
+                    }
+                  />
+                  <strong>{v.name}</strong>
+                </span>
                 <p>
                   {v.address ? `${v.address}:${v.sshPort}` : "尚未填写服务器地址"}
                 </p>
@@ -420,20 +446,27 @@ export default function Vps() {
                 type="button"
                 onClick={() => {
                   void run(async () => {
-                    if (editing.jumpId) {
-                      const jump = data.vps.find(
-                        (v) => v.id === editing.jumpId,
-                      )!;
-                      const result = await call("sshTest", jump);
-                      setTest(
-                        `跳板机连接成功\n${pretty(result)}\n正在连接目标…`,
-                      );
+                    try {
+                      if (editing.jumpId) {
+                        const jump = data.vps.find(
+                          (v) => v.id === editing.jumpId,
+                        )!;
+                        const result = await call("sshTest", jump);
+                        setConnectionStatus((old) => ({ ...old, [jump.id]: "connected" }));
+                        setTest(
+                          `跳板机连接成功\n${pretty(result)}\n正在连接目标…`,
+                        );
+                      }
+                      const r = await call("sshTest", {
+                        ...editing,
+                        publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
+                      });
+                      setConnectionStatus((old) => ({ ...old, [editing.id]: "connected" }));
+                      setTest((prev) => `${prev}\n目标连接成功\n${pretty(r)}`);
+                    } catch (error) {
+                      setConnectionStatus((old) => ({ ...old, [editing.id]: "failed" }));
+                      throw error;
                     }
-                    const r = await call("sshTest", {
-                      ...editing,
-                      publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
-                    });
-                    setTest((prev) => `${prev}\n目标连接成功\n${pretty(r)}`);
                   }, "SSH 连接成功");
                 }}
               >

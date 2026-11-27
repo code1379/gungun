@@ -94,7 +94,7 @@ export default function Nodes() {
   const optResults = (data.tasks.find((t) => t.id === optTask)?.output ||
     []) as Candidate[];
   return (
-    <Tabs value={tagId} onValueChange={(value) => { setTagId(String(value)); setSelected(""); }} className="gap-0">
+    <>
       <PageHeader
         title="节点与订阅"
         description="统一管理节点、动态聚合和链式代理。VPS 节点通过 SSH 手动同步。"
@@ -132,16 +132,19 @@ export default function Nodes() {
           </>
         }
       />
-      <TabsList variant="line" className="mb-4 h-10 max-w-full justify-start overflow-x-auto rounded-none border-b border-border p-0" aria-label="节点分组">
+      <Tabs value={tagId} onValueChange={(value) => { setTagId(String(value)); setSelected(""); }} orientation="vertical" className="nodes-layout">
+        <aside className="nodes-groups-panel">
+          <div className="nodes-groups-heading">分组</div>
+          <TabsList variant="default" className="node-groups-list" aria-label="节点分组">
         {[
           { id: "all", name: "所有节点" },
           { id: "chains", name: "链式代理" },
           ...data.tags,
         ].map((t) => (
-          <TabsTrigger key={t.id} value={t.id} className="h-9 flex-none gap-2 px-3 data-active:text-primary after:bg-primary">
+          <TabsTrigger key={t.id} value={t.id} className="node-group-trigger">
             {t.id === "chains" && <Workflow size={14} />}
             <span>{t.name}</span>
-            <small>
+            <small className="node-group-count">
               {t.id === "all"
                 ? data.nodes.length
                 : t.id === "chains"
@@ -156,8 +159,9 @@ export default function Nodes() {
             </small>
           </TabsTrigger>
         ))}
-      </TabsList>
-      <TabsContent value={tagId}>
+          </TabsList>
+        </aside>
+        <TabsContent value={tagId} className="nodes-main">
       <div className="test-toolbar">
         <div className="actions">
           <Button
@@ -1144,8 +1148,9 @@ export default function Nodes() {
           </>
         )}
       </Modal>
-      </TabsContent>
-    </Tabs>
+        </TabsContent>
+      </Tabs>
+    </>
   );
 }
 

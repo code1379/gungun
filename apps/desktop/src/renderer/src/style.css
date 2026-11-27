@@ -579,13 +579,18 @@
     align-items: center;
     gap: 11px;
     width: 100%;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 12px 10px;
-    background: none;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 13px 11px;
+    background: var(--surface);
     color: var(--muted-foreground);
-    margin-bottom: 7px;
+    margin-bottom: 8px;
     text-align: left;
+    transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  }
+  .deploy-host:hover {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+    background: var(--muted);
   }
   .deploy-host small {
     display: block;
@@ -596,6 +601,92 @@
     background: light-dark(#e5edf8, #263246);
     color: var(--primary);
     border-color: light-dark(#aec4e0, #3c506e);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  }
+  .zone-read-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+  .zone-read-status.loading {
+    color: var(--primary);
+  }
+  .zone-read-status.success {
+    color: var(--good);
+  }
+  .zone-read-status.error {
+    color: var(--danger);
+  }
+  .ssh-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 999px;
+    background: var(--muted-foreground);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--muted-foreground) 14%, transparent);
+  }
+  .ssh-status-dot.connected {
+    background: var(--good);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 18%, transparent);
+  }
+  .ssh-status-dot.failed {
+    background: var(--danger);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 18%, transparent);
+  }
+  .nodes-layout {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+  }
+  .nodes-groups-panel {
+    min-width: 0;
+    padding: 13px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .nodes-groups-heading {
+    margin: 1px 4px 11px;
+    color: var(--foreground);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .node-groups-list {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0;
+    background: transparent;
+  }
+  .node-group-trigger {
+    display: flex;
+    width: 100%;
+    min-height: 39px;
+    height: auto;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 7px;
+    text-align: left;
+  }
+  .node-group-count {
+    min-width: 25px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--muted-foreground);
+    font-size: 10px;
+    text-align: center;
+  }
+  .nodes-main {
+    min-width: 0;
+    overflow: hidden;
   }
   .protocol-grid {
     display: grid;
@@ -970,8 +1061,12 @@
       grid-template-columns: repeat(2, 1fr);
     }
     .deploy-layout {
-      grid-template-columns: 165px 1fr;
+      grid-template-columns: 165px minmax(0, 1fr);
       gap: 20px;
+    }
+    .nodes-layout {
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: 16px;
     }
     .host-row {
       padding: 16px;
@@ -982,6 +1077,31 @@
     }
     .node-table td {
       padding: 12px 10px;
+    }
+  }
+  @media (max-width: 760px) {
+    .nodes-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .nodes-groups-panel {
+      padding: 10px;
+    }
+    .node-groups-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+    }
+    .deploy-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .deploy-hosts {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+      padding: 0 0 12px;
+    }
+    .deploy-hosts-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 8px;
     }
   }
   @media (prefers-reduced-motion: reduce) {
