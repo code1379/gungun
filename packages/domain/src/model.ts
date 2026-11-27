@@ -159,6 +159,7 @@ export interface RemoteState {
   zoneName: string;
   services: Service[];
   websites: Website[];
+  camouflage?: { domain: string; port: number };
   tunnelToken?: string;
   disableTunnel?: boolean;
   realityPrivateKey?: string;

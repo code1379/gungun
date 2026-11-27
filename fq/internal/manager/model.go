@@ -39,6 +39,10 @@ type Website struct {
 	PublicPort  int    `json:"publicPort"`
 	EdgePort    int    `json:"edgePort"`
 }
+type CamouflageSite struct {
+	Domain string `json:"domain"`
+	Port   int    `json:"port"`
+}
 type Certificate struct {
 	NotAfter string   `json:"notAfter"`
 	Domain   string   `json:"domain"`
@@ -52,8 +56,9 @@ type State struct {
 	PublicAddress     string       `json:"publicAddress"`
 	Namespace         string       `json:"namespace"`
 	ZoneName          string       `json:"zoneName"`
-	Services          []Service    `json:"services"`
-	Websites          []Website    `json:"websites"`
+	Services          []Service       `json:"services"`
+	Websites          []Website       `json:"websites"`
+	Camouflage        *CamouflageSite `json:"camouflage,omitempty"`
 	DisableTunnel     bool         `json:"disableTunnel,omitempty"`
 	TunnelToken       string       `json:"tunnelToken,omitempty"`
 	RealityPrivateKey string       `json:"realityPrivateKey,omitempty"`
@@ -109,6 +114,12 @@ func (s *State) Normalize() error {
 	}
 	used := map[string]string{}
 	ids := map[string]bool{}
+	if s.Camouflage != nil {
+		if !validDomain.MatchString(s.Camouflage.Domain) || !ValidPort(s.Camouflage.Port) {
+			return errors.New("invalid shared camouflage site")
+		}
+		used[listenerKey("tcp", s.Camouflage.Port)] = "camouflage"
+	}
 	for i := range s.Services {
 		v := &s.Services[i]
 		if !validID.MatchString(v.ID) || ids[v.ID] {
@@ -160,7 +171,6 @@ func (s *State) Normalize() error {
 					return errors.New("VLESS + WS access modes must share one public mapped port")
 				}
 			}
-		}
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
 				if s.Kind == "nat" {
@@ -224,6 +234,11 @@ func (s *State) Normalize() error {
 		}
 	}
 	domains := map[string]bool{}
+	for _, v := range s.Services {
+		if v.Domain != "" {
+			domains[v.Domain] = true
+		}
+	}
 	websiteTransports := map[int]bool{}
 	for _, w := range s.Websites {
 		if !validID.MatchString(w.ID) || ids[w.ID] {
@@ -252,6 +267,9 @@ func (s *State) Normalize() error {
 		if w.Access == "cdn" && !httpsPort(w.EdgePort) {
 			return errors.New("unsupported website Edge port")
 		}
+	}
+	if s.Camouflage != nil && domains[s.Camouflage.Domain] {
+		return errors.New("shared camouflage domain conflicts with an existing service or website")
 	}
 	if s.RealityPrivateKey == "" {
 		key, e := ecdh.X25519().GenerateKey(rand.Reader)

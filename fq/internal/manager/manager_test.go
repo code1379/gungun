@@ -616,3 +616,31 @@ func TestSpeedTrackerReportsAverageAndPeak(t *testing.T) {
 		t.Fatalf("peak speed = %.2f MB/s, want 3.00", peak)
 	}
 }
+
+
+func TestSharedCamouflageUsesLoopbackStaticSite(t *testing.T) {
+	state := fixture()
+	state.Camouflage = &CamouflageSite{Domain: "web-a7k2p.example.com", Port: 20002}
+	if err := state.Normalize(); err != nil { t.Fatal(err) }
+	config := CaddyConfig(state, "/etc/gungun")
+	servers := config["apps"].(M)["http"].(M)["servers"].(M)
+	server := servers["port_20002"].(M)
+	if server["listen"].([]string)[0] != "127.0.0.1:20002" {
+		t.Fatalf("shared site must only listen on loopback: %#v", server["listen"])
+	}
+	routes := server["routes"].([]any)
+	if len(routes) != 1 { t.Fatalf("expected one static route, got %d", len(routes)) }
+	handler := routes[0].(M)["handle"].([]any)[0].(M)
+	if handler["handler"] != "static_response" || handler["status_code"] != 200 {
+		t.Fatalf("unexpected static site handler: %#v", handler)
+	}
+}
+
+func TestSharedCamouflagePortCannotCollide(t *testing.T) {
+	state := fixture()
+	state.Services = []Service{service("snell", 20002)}
+	state.Camouflage = &CamouflageSite{Domain: "web-a7k2p.example.com", Port: 20002}
+	if err := state.Normalize(); err == nil {
+		t.Fatal("shared site port collision must be rejected")
+	}
+}

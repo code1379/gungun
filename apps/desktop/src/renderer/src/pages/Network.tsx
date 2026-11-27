@@ -178,8 +178,8 @@ export default function Network() {
                 <dd>{vps.namespace}</dd>
                 <dt>完整域名空间</dt>
                 <dd>{vps.zoneName ? `${vps.namespace}.${vps.zoneName}` : "尚未绑定 Cloudflare Zone"}</dd>
-                <dt>伪装站 / 服务子域名示例</dt>
-                <dd>{vps.zoneName ? `web.${vps.namespace}.${vps.zoneName}` : "绑定 Zone 后自动显示"}</dd>
+                <dt>共享伪装站域名</dt>
+                <dd>{remote?.camouflage?.domain || (vps.zoneName ? `web-${vps.namespace}.${vps.zoneName}` : "绑定 Zone 后自动显示")}</dd>
               </dl>
               <Field label="Cloudflare Zone" hint="选择由当前 Cloudflare 账户托管、准备分配给这台 VPS 的域名区域。API 凭据在「设置」中配置。">
                 <div className="input-action">
@@ -222,6 +222,33 @@ export default function Network() {
                   保存域名配置
                 </Button>
               </div>
+              <section className="section">
+                <div className="section-heading">
+                  <h3>共享伪装站</h3>
+                  <Badge tone={remote?.camouflage ? "good" : "neutral"}>{remote?.camouflage ? "已部署" : "尚未部署"}</Badge>
+                </div>
+                <p className="hint">
+                  每台 VPS 只部署一份内置静态网站，通过固定 Argo Tunnel 发布，不占用 NAT 公网端口映射。
+                </p>
+                <dl className="details">
+                  <dt>网站域名</dt>
+                  <dd>{remote?.camouflage?.domain || (vps.zoneName ? `web-${vps.namespace}.${vps.zoneName}` : "绑定 Cloudflare Zone 后生成")}</dd>
+                  <dt>本机监听端口</dt>
+                  <dd>{remote?.camouflage?.port ?? "部署时自动分配，仅监听本机"}</dd>
+                  <dt>发布方式</dt>
+                  <dd>Cloudflare Argo Tunnel</dd>
+                </dl>
+                <Button
+                  variant="default"
+                  disabled={!vps.zoneId || !vps.zoneName || !vps.accountId}
+                  onClick={() => void run(
+                    () => call("deployCamouflage", { vpsId }),
+                    "共享伪装站部署任务已加入任务中心",
+                  )}
+                >
+                  {remote?.camouflage ? "检查 / 修复共享伪装站" : "部署共享伪装站"}
+                </Button>
+              </section>
             </section>
           )}
           {tab === "websites" && (
@@ -234,7 +261,7 @@ export default function Network() {
                     setWebsite({
                       id: `site-${Date.now()}`,
                       domain: vps.zoneName
-                        ? `web-${vps.namespace}.${vps.zoneName}`
+                        ? `site-${vps.namespace}.${vps.zoneName}`
                         : "",
                       target: "127.0.0.1",
                       targetPort: 3000,

@@ -318,6 +318,21 @@ export class API {
           summary,
         );
       }
+      case "deployCamouflage": {
+        const q = z.object({ vpsId: id }).parse(input);
+        const v = s.get<VPS>("vps", q.vpsId);
+        const active = s.all<Task>("tasks").find(
+          (task) => task.vpsId === v.id && task.type === "部署共享伪装站" &&
+            ["queued", "running", "cancelling"].includes(task.state),
+        );
+        if (active) throw new Error(`${v.name} 的共享伪装站任务正在执行，请勿重复提交`);
+        return this.tasks.submit(
+          "部署共享伪装站",
+          v.id,
+          (step) => this.orchestrator.deployCamouflage(v, step),
+          `共享伪装站：web-${v.namespace}.${v.zoneName}`,
+        );
+      }
       case "remoteRead": {
         const q = z
           .object({

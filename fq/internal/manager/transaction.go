@@ -101,6 +101,10 @@ func AtomicWrite(path string, b []byte, mode os.FileMode) error {
 
 var managedFiles = []string{"state.json", "sing-box.json", "caddy.json", "tunnel.env", "key.pem", "cert.pem", "sing-box.enabled", "caddy.enabled", "tunnel.enabled"}
 
+func caddyRequired(s State) bool {
+	return len(s.Websites) > 0 || s.Camouflage != nil
+}
+
 func (m *Manager) Backup() (string, error) {
 	id := time.Now().UTC().Format("20060102T150405.000000000Z")
 	dir := filepath.Join(m.Root, "backups", id)
@@ -173,10 +177,8 @@ func (m *Manager) precheck(s State, dir string) error {
 			return e
 		}
 	}
-	if len(s.Websites) > 0 {
-		if _, e := m.Command(filepath.Join(m.Bin, "caddy"), "validate", "--config", filepath.Join(dir, "caddy.json")); e != nil {
-			return e
-		}
+	if caddyRequired(s) {
+		if _, e := m.Command(filepath.Join(m.Bin, "caddy"), "validate", "--config", filepath.Join(dir, "caddy.json")); e != nil { return e }
 	}
 	for _, v := range s.Services {
 		if v.Egress == "WARP" {
@@ -207,7 +209,7 @@ func (m *Manager) restart(s State) error {
 	for _, item := range []struct {
 		name    string
 		enabled bool
-	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", len(s.Websites) > 0}, {"gungun-tunnel", s.TunnelToken != ""}} {
+	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", caddyRequired(s)}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		verb := "stop"
 		if item.enabled { verb = "restart" }
 		if _, e := m.ServiceAction(item.name, verb); e != nil {
@@ -336,7 +338,7 @@ func (m *Manager) verifyOnce(s State) error {
 	for _, item := range []struct {
 		name    string
 		enabled bool
-	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", len(s.Websites) > 0}, {"gungun-tunnel", s.TunnelToken != ""}} {
+	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", caddyRequired(s)}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		if item.enabled {
 			if _, e := m.ServiceAction(item.name, "status"); e != nil { return e }
 		}
@@ -362,6 +364,11 @@ func (m *Manager) verifyOnce(s State) error {
 		if e != nil {
 			return fmt.Errorf("listen verification: %w", e)
 		}
+		conn.Close()
+	}
+	if s.Camouflage != nil {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Camouflage.Port), 500*time.Millisecond)
+		if err != nil { return fmt.Errorf("shared camouflage listener verification: %w", err) }
 		conn.Close()
 	}
 	for _, w := range s.Websites {

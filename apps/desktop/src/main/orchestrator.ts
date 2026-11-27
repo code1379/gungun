@@ -28,7 +28,7 @@ const protocolDomainPrefix: Record<Service["protocol"], string> = {
   "vless-reality": "reality",
 };
 
-function tunnelIngress(state: Pick<RemoteState, "services" | "websites">) {
+function tunnelIngress(state: Pick<RemoteState, "services" | "websites" | "camouflage">) {
   return [
     ...state.services
       .filter((service) => service.access === "argo")
@@ -48,11 +48,12 @@ function tunnelIngress(state: Pick<RemoteState, "services" | "websites">) {
         hostname: website.domain,
         service: `http://127.0.0.1:${website.port}`,
       })),
+    ...(state.camouflage ? [{ hostname: state.camouflage.domain, service: `http://127.0.0.1:${state.camouflage.port}` }] : []),
   ];
 }
 
 export function tunnelIngressSignature(
-  state: Pick<RemoteState, "services" | "websites">,
+  state: Pick<RemoteState, "services" | "websites" | "camouflage">,
 ) {
   return JSON.stringify(
     tunnelIngress(state).sort((a, b) =>
@@ -263,7 +264,7 @@ export class Orchestrator {
       });
 
       // 首次初始化必须先写入 fq 主机标识，后续 CSR 和 apply 才有稳定状态文件。
-      if (!state.hostId || (!state.services.length && !state.websites.length)) {
+      if (!state.hostId || (!state.services.length && !state.websites.length && !state.camouflage)) {
         await step("初始化 fq 主机标识", () =>
           this.ssh.fq(originalVps, "apply", state),
         );
@@ -394,9 +395,19 @@ export class Orchestrator {
         state.services.push(service);
       }
 
+      if (!state.camouflage && vps.zoneId && vps.zoneName) {
+        if (!vps.accountId) throw new Error("部署共享伪装站前，请先绑定 Cloudflare Account 和 Zone");
+        const domain = await step("检查共享伪装站 Edge 证书覆盖", () =>
+          cf.edgeHostname(vps.zoneId, `web-${vps.namespace}.${vps.zoneName}`),
+        );
+        state.camouflage = { domain, port: await this.allocatePort(state, vps) };
+        await step("安装 / 更新 Caddy 伪装站入口", () => this.ssh.fq(vps, "core update caddy"));
+      }
+
       const hasArgo =
         state.services.some((service) => service.access === "argo") ||
-        state.websites.some((website) => website.access === "argo");
+        state.websites.some((website) => website.access === "argo") ||
+        !!state.camouflage;
       const ingress = tunnelIngress(state);
       const tunnelChanged =
         previousTunnelSignature !== tunnelIngressSignature(state);
@@ -405,7 +416,7 @@ export class Orchestrator {
 
       // Adding an unrelated protocol (for example Hysteria2 direct) must not
       // fetch a Tunnel token, rewrite ingress or reinstall cloudflared.
-      if (hasArgo && (tunnelChanged || !vps.tunnelId)) {
+      if (hasArgo && (tunnelChanged || !vps.tunnelId || state.disableTunnel)) {
         if (!vps.zoneId || !vps.zoneName || !vps.accountId)
           throw new Error("创建 Argo Tunnel 前请先绑定 Cloudflare Account 和 Zone");
         const tunnel = await step("准备此 VPS 的固定 Tunnel", () =>
@@ -436,6 +447,14 @@ export class Orchestrator {
         );
       } else if (!hasArgo && tunnelChanged && vps.tunnelId) {
         await this.updateTunnel(vps, state, step, undo);
+      }
+
+      if (state.camouflage) {
+        if (!vps.zoneId || !vps.tunnelId) throw new Error("共享伪装站需要 Cloudflare Zone 和 Tunnel");
+        const dns = await step("配置共享伪装站 Tunnel DNS", () =>
+          cf.dns(vps.zoneId, state.camouflage!.domain, "CNAME", `${vps.tunnelId}.cfargotunnel.com`, true),
+        );
+        undo.push(dns.undo);
       }
 
       // 所有 DNS 和 Origin Rule 在同一批次中执行，任何失败立即触发统一补偿。
@@ -539,7 +558,7 @@ export class Orchestrator {
           `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq restore ${shellQuote(initialBackup.backupId)} --json`,
         );
       });
-      if (!state.hostId || (!state.services.length && !state.websites.length)) {
+      if (!state.hostId || (!state.services.length && !state.websites.length && !state.camouflage)) {
         await step("初始化 fq 主机标识", () =>
           this.ssh.fq(vps, "apply", state),
         );
@@ -688,21 +707,7 @@ export class Orchestrator {
           vps = { ...vps, tunnelId: tunnel.id };
           state.tunnelToken = tunnel.token;
           state.disableTunnel = false;
-          const ingress = [
-            ...state.services
-              .filter((s) => s.access === "argo")
-              .map((s) => ({
-                hostname: s.domain,
-                service: s.protocol === "vless-ws" ? `https://127.0.0.1:${s.port}` : `http://127.0.0.1:${s.port}`,
-                ...(s.protocol === "vless-ws" ? { originRequest: { originServerName: s.domain } } : {}),
-              })),
-            ...state.websites
-              .filter((w) => w.access === "argo")
-              .map((w) => ({
-                hostname: w.domain,
-                service: `http://127.0.0.1:${w.port}`,
-              })),
-          ];
+          const ingress = tunnelIngress(state);
           if (new Set(ingress.map((i) => i.hostname)).size !== ingress.length)
             throw new Error("Tunnel hostname 重复，请为每项服务选择不同域名");
           undo.push(
@@ -765,6 +770,51 @@ export class Orchestrator {
       return compensate(undo, e);
     }
   }
+  async deployCamouflage(originalVps: VPS, step: Step) {
+    const action = async () => {
+      const undo: (() => Promise<void>)[] = [];
+      let vps = originalVps;
+      try {
+        if (!vps.zoneId || !vps.zoneName || !vps.accountId) throw new Error("请先绑定 Cloudflare Zone 和 Account");
+        let state = await step("读取远程真实配置", () => this.ssh.state(vps));
+        state = { ...state, schemaVersion: 1, hostId: vps.id, hostName: vps.name, kind: vps.kind, publicAddress: vps.publicAddress, namespace: vps.namespace, zoneName: vps.zoneName };
+        const previousSignature = tunnelIngressSignature(state);
+        const backup = await step("备份远程配置", () => this.ssh.fq<{ backupId: string }>(vps, "backup"));
+        undo.push(async () => this.ssh.run(vps, `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq restore ${shellQuote(backup.backupId)} --json`));
+        const cf = new Cloudflare(this.store.settings());
+        const domain = await step("检查共享伪装站 Edge 证书覆盖", () => cf.edgeHostname(vps.zoneId, state.camouflage?.domain || `web-${vps.namespace}.${vps.zoneName}`));
+        if (!state.camouflage) state.camouflage = { domain, port: await this.allocatePort(state, vps) };
+        else state.camouflage.domain = domain;
+        await step("安装 / 更新 Caddy 伪装站入口", () => this.ssh.fq(vps, "core update caddy"));
+        const ingress = tunnelIngress(state);
+        if (new Set(ingress.map((item) => item.hostname)).size !== ingress.length) throw new Error("Tunnel hostname 重复");
+        if (previousSignature !== tunnelIngressSignature(state) || !vps.tunnelId || state.disableTunnel || state.camouflage) {
+          const tunnel = await step("准备此 VPS 的固定 Tunnel", () => cf.tunnel(vps));
+          if (tunnel.created) undo.push(async () => cf.request(`/accounts/${vps.accountId}/cfd_tunnel/${tunnel.id}`, "DELETE"));
+          const oldVps = vps;
+          vps = { ...vps, tunnelId: tunnel.id };
+          state.tunnelToken = tunnel.token;
+          state.disableTunnel = false;
+          this.store.saveVps(vps);
+          undo.push(async () => this.store.saveVps(oldVps));
+          undo.push(await step("更新 Tunnel 多端口路由", () => cf.tunnelConfig(vps.accountId, tunnel.id, ingress)));
+          await step("安装 / 更新 cloudflared", () => this.ssh.fq(vps, "core update cloudflared"));
+        }
+        if (!vps.tunnelId) throw new Error("Tunnel 尚未创建");
+        const dns = await step("配置共享伪装站 Tunnel DNS", () => cf.dns(vps.zoneId, state.camouflage!.domain, "CNAME", `${vps.tunnelId}.cfargotunnel.com`, true));
+        undo.push(dns.undo);
+        state.disableTunnel = false;
+        await step("预检查、应用并验证共享伪装站", () => this.ssh.fq(vps, "apply", state));
+        const synchronized = await this.sync(vps, step);
+        this.notify();
+        return synchronized;
+      } catch (error) { return compensate(undo, error); }
+    };
+    const run = this.cfLane.then(action, action);
+    this.cfLane = run.catch(() => {});
+    return run;
+  }
+
   private async updateTunnel(
     vps: VPS,
     state: RemoteState,
@@ -820,6 +870,7 @@ export class Orchestrator {
   private async allocatePort(state: RemoteState, vps: VPS) {
     const used = new Set(state.services.map((s) => s.port));
     for (const w of state.websites) used.add(w.port);
+    if (state.camouflage) used.add(state.camouflage.port);
     const out = await this.ssh.run(vps, "ss -H -lntu");
     for (const line of out.split("\n")) {
       const match = line.match(/\s[^\s]+:(\d+)\s/);

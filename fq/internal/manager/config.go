@@ -51,8 +51,26 @@ func SingBoxConfig(s State, root string) M {
 	}
 	return M{"log": M{"level": "info", "timestamp": true}, "inbounds": inbounds, "outbounds": []any{M{"type": "direct", "tag": "direct"}, M{"type": "socks", "tag": "warp", "server": "127.0.0.1", "server_port": 40000, "version": "5"}}, "route": M{"rules": rules, "final": "direct"}}
 }
+const camouflageHTML = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light dark\"><title>Welcome</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;padding:32px;box-sizing:border-box;font:16px system-ui;background:#f4f7fb;color:#182230}main{max-width:680px;padding:48px;border-radius:20px;background:white;border:1px solid #e4eaf2}h1{font-size:42px;color:#172b45}p{line-height:1.7;color:#617187}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:30px}.cards section{padding:18px;border:1px solid #e8edf4;border-radius:12px}@media(prefers-color-scheme:dark){body{background:#111827;color:#e6edf5}main{background:#1d2939;border-color:#34445a}h1{color:#e6edf5}p{color:#a9b8ca}.cards section{border-color:#3a4b61}}</style></head><body><main><small>A QUIET CORNER OF THE WEB</small><h1>Welcome.</h1><p>This is a small place for notes, useful links, and things worth keeping. Thanks for stopping by.</p><div class=\"cards\"><section><b>About</b><p>A little background and a few details about this space.</p></section><section><b>Updates</b><p>Occasional notes and recent changes.</p></section><section><b>Resources</b><p>A collection of useful references.</p></section></div></main></body></html>"
+
+func staticSiteRoute(domain string) M {
+	return M{
+		"match": []any{M{"host": []string{domain}}},
+		"handle": []any{M{"handler": "static_response", "status_code": 200, "body": camouflageHTML, "headers": M{"Content-Type": []string{"text/html; charset=utf-8"}}}},
+		"terminal": true,
+	}
+}
+
 func CaddyConfig(s State, root string) M {
 	servers := M{}
+	if s.Camouflage != nil {
+		name := fmt.Sprintf("port_%d", s.Camouflage.Port)
+		servers[name] = M{
+			"listen": []string{fmt.Sprintf("127.0.0.1:%d", s.Camouflage.Port)},
+			"routes": []any{staticSiteRoute(s.Camouflage.Domain)},
+			"automatic_https": M{"disable": true},
+		}
+	}
 	for _, w := range s.Websites {
 		name := fmt.Sprintf("port_%d", w.Port)
 		server, ok := servers[name].(M)
