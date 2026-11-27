@@ -2,7 +2,7 @@
 
 macOS VPS 与代理节点管理端，以及 Linux 远程管理程序 fq。Electron / React / TypeScript / SQLite + Go Monorepo。
 
-> macOS 安装包仅提供 Apple Silicon arm64，适用于 M1 Pro 等 M 系列芯片；fq 提供 Linux amd64 / arm64。正式资产由完整发布门禁统一生成，下载见 [GitHub Releases](https://github.com/code1379/gungun/releases)。
+> 当前从源码运行，暂停 DMG 生成和临时 Actions Artifact 上传。macOS 面向 Apple Silicon arm64，适用于 M1 Pro 等 M 系列芯片；fq 提供 Linux amd64 / arm64。后续正式安装包须完成独立打包验收后发布。
 
 ## 开发
 
@@ -47,3 +47,4 @@ pnpm test:desktop
 - [GitHub Actions](https://github.com/code1379/gungun/actions)
 
 Cloudflare、真实 VPS、NAT 映射、Apple 签名与公证等外部条件及验证状态见测试报告。无签名凭据时构建的是未签名应用。
+
