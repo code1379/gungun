@@ -116,13 +116,16 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if e != nil {
 		return nil, e
 	}
+	if res.StatusCode < 200 || res.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		res.Body.Close()
+		time.Sleep(20 * time.Millisecond)
+		return nil, fmt.Errorf("latency HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
 	_, e = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 	res.Body.Close()
 	if e != nil {
 		return nil, e
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 400 {
-		return nil, fmt.Errorf("latency HTTP %d", res.StatusCode)
 	}
 	result := M{"latencyMs": float64(time.Since(start).Microseconds()) / 1000, "speedMBps": nil, "error": nil}
 	if r.Speed {
