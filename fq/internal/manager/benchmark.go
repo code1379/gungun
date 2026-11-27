@@ -17,12 +17,71 @@ import (
 )
 
 type BenchRequest struct {
-	Config        map[string]any `json:"config"`
-	LatencyURL    string         `json:"latencyUrl"`
-	DownloadURL   string         `json:"downloadUrl"`
-	DownloadBytes int64          `json:"downloadBytes"`
-	TimeoutMS     int            `json:"timeoutMs"`
-	Speed         bool           `json:"speed"`
+	Config         map[string]any `json:"config"`
+	LatencyURL     string         `json:"latencyUrl"`
+	DownloadURL    string         `json:"downloadUrl"`
+	DownloadBytes  int64          `json:"downloadBytes"`
+	TimeoutMS      int            `json:"timeoutMs"`
+	SpeedTimeoutMS int            `json:"speedTimeoutMs"`
+	Speed          bool           `json:"speed"`
+}
+
+type speedTracker struct {
+	started     time.Time
+	windowStart time.Time
+	totalBytes  int64
+	windowBytes int64
+	peakMBps    float64
+}
+
+func newSpeedTracker(now time.Time) *speedTracker {
+	return &speedTracker{started: now, windowStart: now}
+}
+
+func (s *speedTracker) add(bytes int64, now time.Time) {
+	if bytes <= 0 {
+		return
+	}
+	s.totalBytes += bytes
+	s.windowBytes += bytes
+	elapsed := now.Sub(s.windowStart)
+	if elapsed >= time.Second {
+		sample := float64(s.windowBytes) / elapsed.Seconds() / 1_000_000
+		if sample > s.peakMBps {
+			s.peakMBps = sample
+		}
+		s.windowBytes = 0
+		s.windowStart = now
+	}
+}
+
+func (s *speedTracker) finish(now time.Time) (averageMBps, peakMBps float64) {
+	elapsed := now.Sub(s.started).Seconds()
+	if elapsed <= 0 || s.totalBytes <= 0 {
+		return 0, 0
+	}
+	averageMBps = float64(s.totalBytes) / elapsed / 1_000_000
+	finalWindow := now.Sub(s.windowStart).Seconds()
+	if s.windowBytes > 0 && finalWindow > 0 && (finalWindow >= 0.5 || s.peakMBps == 0) {
+		sample := float64(s.windowBytes) / finalWindow / 1_000_000
+		if sample > s.peakMBps {
+			s.peakMBps = sample
+		}
+	}
+	peakMBps = s.peakMBps
+	if peakMBps == 0 {
+		peakMBps = averageMBps
+	}
+	return averageMBps, peakMBps
+}
+
+type speedTrackingWriter struct {
+	tracker *speedTracker
+}
+
+func (w speedTrackingWriter) Write(data []byte) (int, error) {
+	w.tracker.add(int64(len(data)), time.Now())
+	return len(data), nil
 }
 
 type limitedLog struct {
@@ -76,7 +135,15 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if e = os.WriteFile(path, b, 0600); e != nil {
 		return nil, e
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.TimeoutMS*2+10000)*time.Millisecond)
+	speedTimeout := r.SpeedTimeoutMS
+	if speedTimeout < 10000 || speedTimeout > 300000 {
+		speedTimeout = 120000
+	}
+	totalTimeout := r.TimeoutMS*2 + 10000
+	if r.Speed {
+		totalTimeout += speedTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(totalTimeout)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(m.Bin, "sing-box"), "run", "--disable-color", "-D", dir, "-c", path)
 	coreLog := &limitedLog{}
@@ -137,26 +204,45 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if latencySamples[1] < latencyMs {
 		latencyMs = latencySamples[1]
 	}
-	result := M{"latencyMs": latencyMs, "speedMBps": nil, "error": nil}
+	result := M{
+		"latencyMs": latencyMs,
+		"speedMBps": nil,
+		"speedAvgMBps": nil,
+		"speedPeakMBps": nil,
+		"error": nil,
+	}
 	if r.Speed {
-		start := time.Now()
-		res, e := client.Get(r.DownloadURL)
-		if e != nil {
-			return nil, e
+		downloadClient := &http.Client{
+			Transport: transport,
+			Timeout: time.Duration(speedTimeout) * time.Millisecond,
+			CheckRedirect: client.CheckRedirect,
 		}
-		if res.StatusCode != 200 {
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, r.DownloadURL, nil)
+		if requestErr != nil {
+			return nil, requestErr
+		}
+		request.Header.Set("Range", fmt.Sprintf("bytes=0-%d", r.DownloadBytes-1))
+		tracker := newSpeedTracker(time.Now())
+		res, requestErr := downloadClient.Do(request)
+		if requestErr != nil {
+			return nil, requestErr
+		}
+		if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusPartialContent {
 			res.Body.Close()
 			return nil, fmt.Errorf("download HTTP %d", res.StatusCode)
 		}
-		count, e := io.Copy(io.Discard, io.LimitReader(res.Body, r.DownloadBytes))
+		count, copyErr := io.Copy(speedTrackingWriter{tracker: tracker}, io.LimitReader(res.Body, r.DownloadBytes))
 		res.Body.Close()
-		if e != nil {
-			return nil, e
+		if copyErr != nil {
+			return nil, copyErr
 		}
 		if count < 100000 {
 			return nil, fmt.Errorf("download too small: %d", count)
 		}
-		result["speedMBps"] = float64(count) / time.Since(start).Seconds() / 1000000
+		average, peak := tracker.finish(time.Now())
+		result["speedMBps"] = average
+		result["speedAvgMBps"] = average
+		result["speedPeakMBps"] = peak
 	}
 	return result, nil
 }

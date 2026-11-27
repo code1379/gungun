@@ -601,3 +601,18 @@ func TestTunnelReadinessRequiresConnectedConnector(t *testing.T) {
 		t.Fatalf("unhealthy connector accepted: %v", err)
 	}
 }
+
+
+func TestSpeedTrackerReportsAverageAndPeak(t *testing.T) {
+	start := time.Unix(1700000000, 0)
+	tracker := newSpeedTracker(start)
+	tracker.add(1_000_000, start.Add(time.Second))
+	tracker.add(3_000_000, start.Add(2*time.Second))
+	average, peak := tracker.finish(start.Add(2 * time.Second))
+	if average != 2 {
+		t.Fatalf("average speed = %.2f MB/s, want 2.00", average)
+	}
+	if peak != 3 {
+		t.Fatalf("peak speed = %.2f MB/s, want 3.00", peak)
+	}
+}
