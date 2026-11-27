@@ -952,6 +952,23 @@
     background: light-dark(#e5edf8, #263346);
     color: var(--foreground);
   }
+  .common-settings-panel,
+  .protocol-settings-card {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .common-settings-panel { margin: 18px 0; }
+  .protocol-settings-list { display: grid; gap: 14px; margin-top: 18px; }
+  .protocol-settings-card .section-heading { margin-bottom: 14px; }
+  .protocol-settings-card .section-heading h3,
+  .common-settings-panel .section-heading h3 { font-size: 13px; font-weight: 600; }
+  .protocol-settings-card .section-heading p,
+  .common-settings-panel .section-heading p { margin-top: 4px; color: var(--muted-foreground); font-size: 11px; line-height: 1.55; }
+  .protocol-settings-card .access-mode-panel { margin: 0 0 16px; padding: 13px; background: var(--background); }
+  .protocol-settings-card .form-grid { margin-top: 12px; }
   .protocol-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
