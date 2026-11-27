@@ -211,7 +211,7 @@ export class Orchestrator {
       const certificateHosts = [
         ...(service &&
         !["snell", "vless-reality"].includes(service.protocol) &&
-        service.access !== "argo"
+        (service.protocol === "vless-ws" || service.access !== "argo")
           ? [service.domain]
           : []),
         ...(website && website.access !== "argo" ? [website.domain] : []),
@@ -220,7 +220,7 @@ export class Orchestrator {
         (service &&
           service.protocol !== "snell" &&
           service.protocol !== "vless-reality" &&
-          service.access !== "argo") ||
+          (service.protocol === "vless-ws" || service.access !== "argo")) ||
         (website && website.access !== "argo");
       if (
         needsCert &&
