@@ -1,7 +1,7 @@
 import ssh2 from "ssh2";
 import type { Client, ClientChannel } from "ssh2";
 const { Client: SSHClient } = ssh2;
-import { readFile, mkdir, writeFile, chmod, access } from "node:fs/promises";
+import { readFile, mkdir, writeFile, chmod, access, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -108,41 +108,67 @@ export class SSH {
     const c = await this.connect(vps);
     try {
       return await new Promise<string>((resolve, reject) => {
-        let output = "",
-          err = "",
-          size = 0;
+        let output = "";
+        let err = "";
+        let size = 0;
+        let exitCode: number | null | undefined;
+        let exitSignal: string | undefined;
+        let settled = false;
+        const finish = (error?: Error, value?: string) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (error) reject(error);
+          else resolve(value ?? "");
+        };
         const timer = setTimeout(() => {
+          finish(new Error(`SSH 命令超时（${timeoutMs} ms）：${command.slice(0, 500)}`));
           c.close();
-          reject(new Error("SSH 命令超时"));
         }, timeoutMs);
         c.client.exec(command, (error, stream) => {
           if (error) {
-            clearTimeout(timer);
-            reject(error);
+            finish(new Error(`无法启动远程命令：${error.message}`));
             return;
           }
           stream.on("data", (b: Buffer) => {
             size += b.length;
             if (size > maxBytes) {
+              finish(new Error(`远程输出超过限制（${maxBytes} bytes）：${command.slice(0, 300)}`));
               stream.close();
-              clearTimeout(timer);
-              reject(new Error("远程输出过大"));
               return;
             }
-            output += b.toString();
+            output = (output + b.toString()).slice(-16000);
           });
           stream.stderr.on("data", (b: Buffer) => {
             err = (err + b.toString()).slice(-16000);
           });
-          stream.on("close", (code: number) => {
-            clearTimeout(timer);
-            if (code !== 0)
-              reject(new Error(`远程命令失败 (${code})：${err || output}`));
-            else resolve(output);
+          stream.on("exit", (code: number | null, signal?: string) => {
+            exitCode = code;
+            exitSignal = signal;
+          });
+          stream.on("close", (code: number | null, signal?: string) => {
+            if (code !== undefined && code !== null) exitCode = code;
+            if (signal) exitSignal = signal;
+            if (exitCode === 0) {
+              finish(undefined, output);
+              return;
+            }
+            const detail = [
+              `远程命令执行失败：${command.slice(0, 500)}`,
+              exitCode === undefined || exitCode === null
+                ? "远程 SSH 通道关闭，但服务器没有返回退出码"
+                : `退出码：${exitCode}`,
+              exitSignal ? `终止信号：${exitSignal}` : "",
+              err.trim() ? `stderr：\\n${err.trim()}` : "",
+              output.trim() ? `stdout：\\n${output.trim()}` : "",
+              exitCode == null && !exitSignal && !err.trim() && !output.trim()
+                ? "可能原因：远程进程被系统终止、SSH 连接中断，或服务器关闭了会话"
+                : "",
+            ].filter(Boolean).join("\\n");
+            finish(new Error(detail));
           });
           stream.on("error", (e: Error) => {
-            clearTimeout(timer);
-            reject(e);
+            finish(new Error(`SSH 远程通道错误：${e.message}${err.trim() ? `\\nstderr：${err.trim()}` : ""}`));
           });
           stream.end(input);
         });
@@ -162,20 +188,41 @@ export class SSH {
     );
     return JSON.parse(output) as T;
   }
-  async upload(vps: VPS, local: string, remote: string) {
+  async upload(
+    vps: VPS,
+    local: string,
+    remote: string,
+    onProgress?: (transferred: number, total: number) => void,
+  ) {
+    const file = await stat(local);
+    const total = file.size;
+    onProgress?.(0, total);
     const c = await this.connect(vps);
     try {
       await new Promise<void>((resolve, reject) =>
         c.client.sftp((e, s) => {
           if (e) {
-            reject(e);
+            reject(new Error(`无法建立 SFTP 通道：${e.message}`));
             return;
           }
-          s.fastPut(local, remote, { mode: 0o700 }, (err) => {
-            s.end();
-            if (err) reject(err);
-            else resolve();
-          });
+          s.fastPut(
+            local,
+            remote,
+            {
+              mode: 0o700,
+              step: (transferred: number, _chunk: number, size: number) => {
+                onProgress?.(transferred, size || total);
+              },
+            },
+            (err) => {
+              s.end();
+              if (err) reject(new Error(`SFTP 上传失败（${remote}）：${err.message}`));
+              else {
+                onProgress?.(total, total);
+                resolve();
+              }
+            },
+          );
         }),
       );
     } finally {
