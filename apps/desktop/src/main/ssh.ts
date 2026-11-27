@@ -177,14 +177,14 @@ export class SSH {
       c.close();
     }
   }
-  async fq<T>(vps: VPS, action: string, input?: unknown): Promise<T> {
+  async fq<T>(vps: VPS, action: string, input?: unknown, timeoutMs = 300000): Promise<T> {
     if (!/^[a-z][a-z -]*$/.test(action)) throw new Error("无效 fq 操作");
     const command = `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq ${action} --json`;
     const output = await this.run(
       vps,
       command,
       input === undefined ? "" : JSON.stringify(input),
-      300000,
+      timeoutMs,
     );
     return JSON.parse(output) as T;
   }
