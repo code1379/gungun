@@ -143,6 +143,33 @@ func TestVlessWSAccessModesShareOneInbound(t *testing.T) {
 	if cdnNode["port"] != 80 || cdnNode["tls"] != false { t.Fatalf("HTTP CDN export = %#v", cdnNode) }
 }
 
+func TestVlessWSEdgeSchemeDefaultsAndPorts(t *testing.T) {
+	http := fixture()
+	v := service("vless-ws", 45516)
+	v.Access = "cdn"
+	v.Domain = "cdn.example.com"
+	v.EdgeScheme = "http"
+	v.EdgePort = 0
+	http.Services = []Service{v}
+	if err := http.Normalize(); err != nil { t.Fatal(err) }
+	if http.Services[0].EdgePort != 80 { t.Fatalf("HTTP default Edge port = %d, want 80", http.Services[0].EdgePort) }
+
+	https := fixture()
+	v = service("vless-ws", 45516)
+	v.Access = "cdn"
+	v.Domain = "cdn.example.com"
+	v.EdgeScheme = "https"
+	v.EdgePort = 2053
+	https.Services = []Service{v}
+	if err := https.Normalize(); err != nil { t.Fatal(err) }
+
+	invalid := fixture()
+	v.EdgeScheme = "http"
+	v.EdgePort = 443
+	invalid.Services = []Service{v}
+	if err := invalid.Normalize(); err == nil { t.Fatal("HTTPS port must not be accepted for HTTP Edge scheme") }
+}
+
 func TestArgoExport(t *testing.T) {
 	s := fixture()
 	v := service("vless-ws", 20000)
