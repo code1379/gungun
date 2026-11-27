@@ -56,7 +56,7 @@ export class Orchestrator {
       return this.ssh.fq(vps, "install");
     });
     await step("安装并校验 sing-box", () =>
-      this.ssh.fq(vps, "core update sing-box"),
+      this.ssh.fq(vps, "core update sing-box", undefined, 10 * 60 * 1000),
     );
   }
   async sync(vps: VPS, step: Step) {
