@@ -71,3 +71,35 @@ it("同 VPS 串行，不同 VPS 并行，并持久化实际任务输出", async 
     rmSync(path, { recursive: true, force: true });
   }
 });
+
+it("任务步骤持续保存文件传输百分比和字节数", async () => {
+  const path = mkdtempSync(join(tmpdir(), "gungun-transfer-"));
+  const store = new Store(join(path, "db"));
+  const center = new TaskCenter(store, () => {}, 2);
+  const waiting = deferred();
+  const release = deferred();
+  try {
+    const id = center.submit("upload", "vps-upload", async (step) =>
+      step("上传 fq", async (reportTransfer) => {
+        reportTransfer(512, 1024);
+        waiting.resolve();
+        await release.promise;
+      }),
+    );
+    await waiting.promise;
+    const task = store.get<Task>("tasks", id);
+    expect(task.steps[0].transfer).toEqual({
+      transferred: 512,
+      total: 1024,
+      percent: 50,
+    });
+    expect(task.progress).toBeGreaterThan(0);
+    release.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(store.get<Task>("tasks", id).steps[0].transfer?.percent).toBe(100);
+  } finally {
+    release.resolve();
+    store.close();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
