@@ -17,7 +17,8 @@
     "package:mac": "pnpm --filter @gungun/desktop package:mac",
     "test:desktop": "node tests/desktop-smoke.mjs",
     "prepare:dev": "NODE_USE_ENV_PROXY=1 node scripts/prepare-dev.mjs",
-    "electron:install": "node scripts/install-electron.mjs"
+    "electron:install": "node scripts/install-electron.mjs",
+    "setup:install": "node scripts/install-deps.mjs --frozen-lockfile"
   },
   "dependencies": {
     "yaml": "^2.8.1",
