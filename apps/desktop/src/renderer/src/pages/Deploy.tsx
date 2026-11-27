@@ -9,6 +9,7 @@ const defaults: Service = {
   protocol: "hysteria2",
   port: 0,
   publicPort: 0,
+  edgeScheme: "https",
   edgePort: 443,
   access: "direct",
   egress: "DIRECT",
@@ -25,6 +26,11 @@ function transportForProtocol(protocol: Service["protocol"]): "tcp" | "udp" {
 }
 function portKey(transport: "tcp" | "udp", port: number) {
   return `${transport}:${port}`;
+}
+const HTTP_EDGE_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095];
+const HTTPS_EDGE_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
+function portAssignmentKey(protocol: Service["protocol"], access: Service["access"]) {
+  return protocol === "vless-ws" ? "vless-ws:shared" : [protocol, access].join(":");
 }
 const protocolIds = Object.keys(protocolLabels) as Service["protocol"][];
 const protocolDescriptions: Record<Service["protocol"], string> = {
@@ -44,16 +50,36 @@ function readServiceSelections(state: RemoteState) {
   const configs = createServiceConfigMap();
   for (const protocol of protocolIds) {
     const matches = state.services.filter((item) => item.protocol === protocol);
-    const preferred = matches.find((item) => item.access === "direct") || matches.find((item) => item.access === "cdn") || matches[0];
+    const preferred = protocol === "vless-ws"
+      ? matches.find((item) => item.access === "cdn") || matches.find((item) => item.access === "direct") || matches[0]
+      : matches.find((item) => item.access === "direct") || matches[0];
     if (preferred) configs[protocol] = { ...configs[protocol], ...preferred };
   }
   const modes = state.services.filter((item) => item.protocol === "vless-ws").map((item) => item.access);
+  const portAssignments: Record<string, ServicePortConfig> = {};
+  for (const item of state.services.filter((service) => service.protocol !== "vless-ws")) {
+    portAssignments[portAssignmentKey(item.protocol, item.access)] = {
+      port: item.port,
+      publicPort: item.publicPort || item.port,
+      separatePublicPort: item.publicPort > 0 && item.publicPort !== item.port,
+    };
+  }
+  const sharedVless = state.services.find((item) => item.protocol === "vless-ws" && item.access === "cdn")
+    || state.services.find((item) => item.protocol === "vless-ws" && item.access === "direct")
+    || state.services.find((item) => item.protocol === "vless-ws");
+  if (sharedVless) {
+    portAssignments["vless-ws:shared"] = {
+      port: sharedVless.port,
+      publicPort: sharedVless.publicPort || sharedVless.port,
+      separatePublicPort: sharedVless.publicPort > 0 && sharedVless.publicPort !== sharedVless.port,
+    };
+  }
   return {
     configs,
     protocols: [...new Set(state.services.map((item) => item.protocol))],
     accessModes: modes.length ? [...new Set(modes)] : ["direct" as const],
     customDomains: Object.fromEntries(state.services.map((item) => [[item.protocol, item.access].join(":"), item.domain])) as Record<string, string>,
-    portAssignments: Object.fromEntries(state.services.map((item) => [[item.protocol, item.access].join(":"), { port: item.port, publicPort: item.publicPort, separatePublicPort: item.publicPort > 0 && item.publicPort !== item.port }])) as Record<string, ServicePortConfig>,
+    portAssignments,
   };
 }
 export default function Deploy() {
@@ -112,7 +138,7 @@ export default function Deploy() {
   const updateService = <K extends keyof Service,>(protocol: Service["protocol"], key: K, value: Service[K]) =>
     setServiceConfigs((current) => ({ ...current, [protocol]: { ...current[protocol], [key]: value } }));
   const updatePort = (protocol: Service["protocol"], access: Service["access"], key: keyof ServicePortConfig, value: number) => {
-    const id = [protocol, access].join(":");
+    const id = portAssignmentKey(protocol, access);
     setPortAssignments((current) => ({
       ...current,
       [id]: { port: 0, publicPort: 0, separatePublicPort: false, ...current[id], [key]: value },
@@ -359,24 +385,31 @@ export default function Deploy() {
                     const selectedKeys = new Set(selectedCombinations.map(({ protocol, access }) => [protocol, access].join(":")));
                     const occupied = new Set([
                       ...(remote?.services || [])
-                        .filter((item) => !selectedKeys.has([item.protocol, item.access].join(":")))
+                        .filter((item) =>
+                          !(selectedProtocols.includes("vless-ws") && item.protocol === "vless-ws") &&
+                          !selectedKeys.has([item.protocol, item.access].join(":")),
+                        )
                         .map((item) => portKey(transportForProtocol(item.protocol), item.port)),
                       ...(remote?.websites || []).map((item) => portKey("tcp", item.port)),
                     ]);
+                    const selectedListeners = new Map<string, string>();
                     const zoneName = selectedZone?.name || vps.zoneName;
                     const services = selectedCombinations.map(({ protocol, access }) => {
                       const config = serviceConfigs[protocol];
                       const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
-                      const assignment = portAssignments[[protocol, access].join(":")];
-                      let port = existing?.port || assignment?.port || 0;
-                      if (!port && vps.kind === "nat") throw new Error(protocolLabels[protocol] + " / " + access + "：请填写独立的内部监听端口");
-                      if (!port && vps.kind === "public") port = 0;
+                      const assignment = portAssignments[portAssignmentKey(protocol, access)];
+                      let port = assignment?.port || existing?.port || 0;
+                      if (!port && vps.kind === "nat") throw new Error(protocolLabels[protocol] + "：请填写内部监听端口");
                       const listener = portKey(transportForProtocol(protocol), port);
-                      if (port && occupied.has(listener)) throw new Error(protocolLabels[protocol] + " / " + access + "：" + transportForProtocol(protocol).toUpperCase() + " 内部端口 " + port + " 已被占用");
-                      if (port) occupied.add(listener);
+                      if (port) {
+                        if (occupied.has(listener)) throw new Error(protocolLabels[protocol] + "：" + transportForProtocol(protocol).toUpperCase() + " 内部端口 " + port + " 已被占用");
+                        const owner = selectedListeners.get(listener);
+                        if (owner && !(owner === "vless-ws" && protocol === "vless-ws")) throw new Error(protocolLabels[protocol] + "：" + transportForProtocol(protocol).toUpperCase() + " 内部端口 " + port + " 与其他所选服务冲突");
+                        if (!owner) selectedListeners.set(listener, protocol);
+                      }
                       const separatePublicPort = vps.kind === "nat" && access !== "argo" && !!assignment?.separatePublicPort;
                       const publicPort = access === "argo" ? 0 : separatePublicPort ? (assignment?.publicPort || 0) : port;
-                      if (vps.kind === "nat" && access !== "argo" && !publicPort) throw new Error(protocolLabels[protocol] + " / " + access + "：请填写内部监听端口");
+                      if (vps.kind === "nat" && access !== "argo" && !publicPort) throw new Error(protocolLabels[protocol] + "：请填写公网映射端口");
                       const prefix = protocolDomainPrefix[protocol] + "-" + access;
                       const generatedDomain = zoneName ? prefix + "." + vps.namespace + "." + zoneName : "";
                       const customDomain = customDomains[[protocol, access].join(":")] ?? existing?.domain ?? "";
@@ -423,7 +456,7 @@ export default function Deploy() {
                           <div className="section-heading">
                             <div>
                               <h3>接入方式</h3>
-                              <p>可同时选择一种或多种入口；每个入口分别配置监听端口、NAT 映射端口和域名。</p>
+                              <p>直连、CDN 和 Argo 共用同一个内部监听端口；每种入口只需单独设置域名和接入参数。</p>
                             </div>
                             <Badge tone="blue">多选</Badge>
                           </div>
@@ -448,11 +481,52 @@ export default function Deploy() {
                           </div>
                         </section>
                       )}
+                      {protocol === "vless-ws" && (
+                        <section className="service-access-config">
+                          <div className="section-heading">
+                            <div>
+                              <h4>统一监听端口</h4>
+                              <p>直连、Cloudflare CDN 和 Argo Tunnel 共用此内部端口，不需要为每种接入方式重复填写。</p>
+                            </div>
+                          </div>
+                          <div className="form-grid">
+                            <Field label="内部监听端口" hint={vps.kind === "nat" ? "VPS 内部 sing-box 实际监听的端口。" : "填 0 时由系统自动分配。"}>
+                              <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={portAssignments["vless-ws:shared"]?.port || remote?.services.find((item) => item.protocol === "vless-ws")?.port || 0} onChange={(e) => updatePort(protocol, "direct", "port", Number(e.target.value))} />
+                            </Field>
+                            {vps.kind === "nat" && accessModes.some((mode) => mode !== "argo") && (
+                              <div className="port-override-option">
+                                <label className="port-override-label">
+                                  <Checkbox
+                                    checked={!!portAssignments["vless-ws:shared"]?.separatePublicPort}
+                                    onCheckedChange={(checked) => setPortAssignments((current) => {
+                                      const previous = current["vless-ws:shared"] || { port: 0, publicPort: 0, separatePublicPort: false };
+                                      return {
+                                        ...current,
+                                        "vless-ws:shared": {
+                                          ...previous,
+                                          separatePublicPort: checked,
+                                          publicPort: checked ? (previous.publicPort || previous.port) : previous.port,
+                                        },
+                                      };
+                                    })}
+                                  />
+                                  <span>公网映射端口不同于内部监听端口</span>
+                                </label>
+                                {portAssignments["vless-ws:shared"]?.separatePublicPort && (
+                                  <Field label="公网映射端口" hint="例如内部 45516，公网映射 18880；默认与内部端口相同。">
+                                    <Input type="number" min={1} max={65535} value={portAssignments["vless-ws:shared"]?.publicPort || portAssignments["vless-ws:shared"]?.port || 0} onChange={(e) => updatePort(protocol, "direct", "publicPort", Number(e.target.value))} />
+                                  </Field>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </section>
+                      )}
                       <div className="service-access-config-list">
                         {accesses.map((access) => {
                           const key = [protocol, access].join(":");
                           const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
-                          const assignment: ServicePortConfig = portAssignments[key] || {
+                          const assignment: ServicePortConfig = portAssignments[portAssignmentKey(protocol, access)] || {
                             port: existing?.port || 0,
                             publicPort: existing?.publicPort || existing?.port || 0,
                             separatePublicPort: !!existing && existing.publicPort > 0 && existing.publicPort !== existing.port,
@@ -460,12 +534,14 @@ export default function Deploy() {
                           const accessLabel = access === "direct" ? "直连" : access === "cdn" ? "Cloudflare CDN" : "Argo Tunnel";
                           const suggested = protocolDomainPrefix[protocol] + "-" + access + "." + vps.namespace + "." + (vps.zoneName || "your-domain");
                           return <section className="service-access-config" key={key}>
-                            <div className="section-heading"><div><h4>{protocol === "vless-ws" ? accessLabel + "入口" : "监听端口"}</h4>{protocol === "vless-ws" && <p>此入口独立配置内部监听端口；公网映射默认与内部端口相同。</p>}</div></div>
+                            <div className="section-heading"><div><h4>{protocol === "vless-ws" ? accessLabel + "入口" : "监听端口"}</h4></div></div>
                             <div className="form-grid">
-                              <Field label="内部监听端口" hint={vps.kind === "nat" ? "填写此服务在 VPS 内部实际监听的端口。" : "填 0 时由系统自动分配。"}>
-                                <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={assignment.port} onChange={(e) => updatePort(protocol, access, "port", Number(e.target.value))} />
-                              </Field>
-                              {vps.kind === "nat" && access !== "argo" && <div className="port-override-option">
+                              {protocol !== "vless-ws" && (
+                                <Field label="内部监听端口" hint={vps.kind === "nat" ? "填写此服务在 VPS 内部实际监听的端口。" : "填 0 时由系统自动分配。"}>
+                                  <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={assignment.port} onChange={(e) => updatePort(protocol, access, "port", Number(e.target.value))} />
+                                </Field>
+                              )}
+                              {protocol !== "vless-ws" && vps.kind === "nat" && access !== "argo" && <div className="port-override-option">
                                 <label className="port-override-label">
                                   <Checkbox
                                     checked={assignment.separatePublicPort}
@@ -480,14 +556,31 @@ export default function Deploy() {
                                   />
                                   <span>公网映射端口不同于内部监听端口</span>
                                 </label>
-                                {assignment.separatePublicPort && <Field label="公网映射端口" hint="例如内部 8880，公网映射 18880；默认值与内部端口相同。">
+                                {assignment.separatePublicPort && <Field label="公网映射端口" hint="默认与内部监听端口相同。">
                                   <Input type="number" min={1} max={65535} value={assignment.publicPort || assignment.port} onChange={(e) => updatePort(protocol, access, "publicPort", Number(e.target.value))} />
                                 </Field>}
                               </div>}
-                              {vps.kind === "nat" && access === "argo" && <p className="service-port-note">Argo Tunnel 通过隧道转发到内部监听端口，不需要公网映射端口。</p>}
-                              {protocol === "vless-ws" && access === "cdn" && <Field label="Cloudflare Edge HTTPS 端口" hint="这是客户端连接 Cloudflare 使用的端口，与 VPS 公网映射端口不同。">
-                                <Select value={String(config.edgePort)} onValueChange={(value) => updateService(protocol, "edgePort", Number(value))}>{[443, 2053, 2083, 2087, 2096, 8443].map((port) => <option key={port} value={port}>{port}</option>)}</Select>
-                              </Field>}
+                              {protocol === "vless-ws" && access === "cdn" && (
+                                <>
+                                  <Field label="客户端到 Cloudflare 的协议" hint="HTTP 仅影响客户端到 Cloudflare；源站连接仍使用 TLS，Zone SSL 模式需为 Full 或 Full (strict)。">
+                                    <Select value={config.edgeScheme} onValueChange={(value) => {
+                                      const scheme = value as "http" | "https";
+                                      updateService(protocol, "edgeScheme", scheme);
+                                      const allowed = scheme === "http" ? HTTP_EDGE_PORTS : HTTPS_EDGE_PORTS;
+                                      if (!allowed.includes(config.edgePort)) updateService(protocol, "edgePort", scheme === "http" ? 80 : 443);
+                                    }}>
+                                      <option value="https">HTTPS（默认 443）</option>
+                                      <option value="http">HTTP（默认 80）</option>
+                                    </Select>
+                                  </Field>
+                                  <Field label={config.edgeScheme.toUpperCase() + " Edge 端口"}>
+                                    <Select value={String(config.edgePort)} onValueChange={(value) => updateService(protocol, "edgePort", Number(value))}>
+                                      {(config.edgeScheme === "http" ? HTTP_EDGE_PORTS : HTTPS_EDGE_PORTS).map((port) => <option key={port} value={port}>{port}</option>)}
+                                    </Select>
+                                  </Field>
+                                </>
+                              )}
+                              {vps.kind === "nat" && access === "argo" && protocol !== "vless-ws" && <p className="service-port-note">Argo Tunnel 通过隧道转发到内部监听端口，不需要公网映射端口。</p>}
                               {vps.zoneId && vps.zoneName && needsDomain && <Field label="域名（可选）" hint={"留空自动使用：" + suggested}>
                                 <Input value={customDomains[key] ?? ""} onChange={(e) => setCustomDomains((current) => ({ ...current, [key]: e.target.value }))} placeholder={suggested} />
                               </Field>}
