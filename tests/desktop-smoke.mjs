@@ -39,7 +39,7 @@ try {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const generatedKey = await page.evaluate(
     (path) => window.gungun.invoke("generateKey", { path }),
-    ssh.clientKeyPath,
+    join(dir, "gungun-test-key"),
   );
   if (!generatedKey.ok) throw new Error(generatedKey.error);
   await expect(
