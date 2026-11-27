@@ -183,6 +183,10 @@ export class Orchestrator {
         const generated = !service.domain;
         if (generated && vps.zoneName)
           service.domain = `${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`;
+        if (service.protocol === "vless-ws") {
+          service.edgeScheme ||= "https";
+          if (!service.edgePort) service.edgePort = service.edgeScheme === "http" ? 80 : 443;
+        }
         if (service.access !== "direct") {
           const current = service;
           const cf = new Cloudflare(this.store.settings());
@@ -236,15 +240,24 @@ export class Orchestrator {
       }
       if (service) {
         service = { ...service };
-        if (!service.port) {
-          if (vps.kind === "nat")
-            throw new Error("NAT VPS 必须填写内部监听端口");
-          service.port = await this.allocatePort(state, vps);
-        }
-        if (!service.publicPort) {
-          if (vps.kind === "nat" && service.access !== "argo")
-            throw new Error("NAT VPS 必须填写公网映射端口");
-          service.publicPort = service.port;
+        if (service.protocol === "vless-ws") {
+          const shared = state.services.find((item) => item.protocol === "vless-ws");
+          service.port = service.port || shared?.port || await this.allocatePort(state, vps);
+          const sharedPublic = state.services.find((item) => item.protocol === "vless-ws" && item.access !== "argo")?.publicPort;
+          if (service.access === "argo") service.publicPort = 0;
+          else service.publicPort = service.publicPort || sharedPublic || service.port;
+          for (const previous of state.services.filter((item) => item.protocol === "vless-ws" && item.access !== "argo" && service.access !== "argo")) {
+            if (previous.publicPort !== service.publicPort) throw new Error("VLESS + WS 的直连与 CDN 必须共用同一个公网映射端口");
+          }
+        } else {
+          if (!service.port) {
+            if (vps.kind === "nat") throw new Error("NAT VPS 必须填写内部监听端口");
+            service.port = await this.allocatePort(state, vps);
+          }
+          if (!service.publicPort) {
+            if (vps.kind === "nat" && service.access !== "argo") throw new Error("NAT VPS 必须填写公网映射端口");
+            service.publicPort = service.access === "argo" ? 0 : service.port;
+          }
         }
         if (!service.domain && vps.zoneName)
           service.domain = `${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`;
@@ -298,7 +311,8 @@ export class Orchestrator {
               .filter((s) => s.access === "argo")
               .map((s) => ({
                 hostname: s.domain,
-                service: `http://127.0.0.1:${s.port}`,
+                service: s.protocol === "vless-ws" ? `https://127.0.0.1:${s.port}` : `http://127.0.0.1:${s.port}`,
+                ...(s.protocol === "vless-ws" ? { originRequest: { originServerName: s.domain } } : {}),
               })),
             ...state.websites
               .filter((w) => w.access === "argo")
@@ -343,12 +357,17 @@ export class Orchestrator {
             ),
           );
           undo.push(dns.undo);
-          if (item.access === "cdn")
-            undo.push(
-              await step("配置 Edge 到公网回源端口", () =>
+          if (item.access === "cdn") {
+            if (item.edgePort === item.publicPort) {
+              undo.push(await step("清理不再需要的 Edge 回源规则", () =>
+                cf.removeOriginRule(vps.zoneId, item.domain),
+              ));
+            } else {
+              undo.push(await step("配置 Edge 到公网回源端口", () =>
                 cf.originRule(vps.zoneId, item.domain, item.publicPort),
-              ),
-            );
+              ));
+            }
+          }
         }
       }
       if (item.access !== "argo" && vps.tunnelId) {
@@ -375,7 +394,8 @@ export class Orchestrator {
         .filter((s) => s.access === "argo")
         .map((s) => ({
           hostname: s.domain,
-          service: `http://127.0.0.1:${s.port}`,
+          service: s.protocol === "vless-ws" ? `https://127.0.0.1:${s.port}` : `http://127.0.0.1:${s.port}`,
+          ...(s.protocol === "vless-ws" ? { originRequest: { originServerName: s.domain } } : {}),
         })),
       ...state.websites
         .filter((w) => w.access === "argo")
