@@ -20,7 +20,7 @@ import { Checkbox } from "./ui/checkbox";
 import { SelectField as Select } from "./select-field";
 import { Badge as BadgePrimitive } from "./ui/badge";
 import { cn } from "../lib/utils";
-import { X, AlertTriangle, Check, Server } from "lucide-react";
+import { X, AlertTriangle, Check, Server, CircleHelp, ExternalLink } from "lucide-react";
 import { errorText, useApp } from "../api";
 import { Button as StyledButton } from "./ui/button";
 export { Input, Textarea, Checkbox, Select };
@@ -98,13 +98,23 @@ export function Modal({
 export function Field({
   label,
   hint,
+  help,
   children,
 }: {
   label: string;
   hint?: string;
+  help?: {
+    title: string;
+    description: string;
+    steps?: string[];
+    url?: string;
+    linkLabel?: string;
+  };
   children: ReactNode;
 }) {
   const id = useId();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { call, run } = useApp();
   const direct =
     isValidElement<{ id?: string; "aria-describedby"?: string }>(children) &&
     ((typeof children.type === "string" &&
@@ -114,11 +124,21 @@ export function Field({
       ));
   return (
     <div className="field mb-4 grid min-w-0 gap-2">
-      {direct ? (
-        <Label htmlFor={id}>{label}</Label>
-      ) : (
-        <span className="text-xs font-medium">{label}</span>
-      )}
+      <div className="flex items-center gap-1.5">
+        {direct ? <Label htmlFor={id}>{label}</Label> : <span className="text-xs font-medium">{label}</span>}
+        {help && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-5 rounded-full p-0 text-muted-foreground hover:text-foreground"
+            aria-label={`${label} 帮助`}
+            onClick={() => setHelpOpen(true)}
+          >
+            <CircleHelp size={15} />
+          </Button>
+        )}
+      </div>
       {direct
         ? cloneElement(children, {
             id,
@@ -126,12 +146,28 @@ export function Field({
           })
         : children}
       {hint && (
-        <small
-          id={`${id}-hint`}
-          className="text-xs leading-relaxed text-muted-foreground"
-        >
+        <small id={`${id}-hint`} className="text-xs leading-relaxed text-muted-foreground">
           {hint}
         </small>
+      )}
+      {help && (
+        <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title={help.title} description={help.description}>
+          {help.steps?.length ? (
+            <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed">
+              {help.steps.map((step, index) => <li key={index}>{step}</li>)}
+            </ol>
+          ) : null}
+          {help.url && (
+            <div className="form-actions">
+              <Button type="button" variant="default" onClick={() => {
+                void run(() => call("openExternal", help.url), "已在默认浏览器中打开官方页面");
+              }}>
+                <ExternalLink size={14} />
+                {help.linkLabel || "打开官方页面"}
+              </Button>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );
