@@ -20,6 +20,12 @@ const defaults: Service = {
   realityPort: 443,
 };
 type ServicePortConfig = { port: number; publicPort: number; separatePublicPort: boolean };
+function transportForProtocol(protocol: Service["protocol"]): "tcp" | "udp" {
+  return protocol === "hysteria2" || protocol === "tuic" ? "udp" : "tcp";
+}
+function portKey(transport: "tcp" | "udp", port: number) {
+  return `${transport}:${port}`;
+}
 const protocolIds = Object.keys(protocolLabels) as Service["protocol"][];
 const protocolDescriptions: Record<Service["protocol"], string> = {
   hysteria2: "Hysteria2 使用独立密码和 TLS 证书，适合 UDP 高性能传输。",
@@ -350,7 +356,13 @@ export default function Deploy() {
                         accountId: selectedZone.account.id,
                       });
                     }
-                    const occupied = new Set([...(remote?.services || []).map((item) => item.port), ...(remote?.websites || []).map((item) => item.port)]);
+                    const selectedKeys = new Set(selectedCombinations.map(({ protocol, access }) => [protocol, access].join(":")));
+                    const occupied = new Set([
+                      ...(remote?.services || [])
+                        .filter((item) => !selectedKeys.has([item.protocol, item.access].join(":")))
+                        .map((item) => portKey(transportForProtocol(item.protocol), item.port)),
+                      ...(remote?.websites || []).map((item) => portKey("tcp", item.port)),
+                    ]);
                     const zoneName = selectedZone?.name || vps.zoneName;
                     const services = selectedCombinations.map(({ protocol, access }) => {
                       const config = serviceConfigs[protocol];
@@ -359,8 +371,9 @@ export default function Deploy() {
                       let port = existing?.port || assignment?.port || 0;
                       if (!port && vps.kind === "nat") throw new Error(protocolLabels[protocol] + " / " + access + "：请填写独立的内部监听端口");
                       if (!port && vps.kind === "public") port = 0;
-                      if (port && occupied.has(port) && !existing) throw new Error(protocolLabels[protocol] + " / " + access + "：内部端口 " + port + " 已被占用");
-                      if (port) occupied.add(port);
+                      const listener = portKey(transportForProtocol(protocol), port);
+                      if (port && occupied.has(listener)) throw new Error(protocolLabels[protocol] + " / " + access + "：" + transportForProtocol(protocol).toUpperCase() + " 内部端口 " + port + " 已被占用");
+                      if (port) occupied.add(listener);
                       const separatePublicPort = vps.kind === "nat" && access !== "argo" && !!assignment?.separatePublicPort;
                       const publicPort = access === "argo" ? 0 : separatePublicPort ? (assignment?.publicPort || 0) : port;
                       if (vps.kind === "nat" && access !== "argo" && !publicPort) throw new Error(protocolLabels[protocol] + " / " + access + "：请填写内部监听端口");
@@ -369,9 +382,7 @@ export default function Deploy() {
                       const customDomain = customDomains[[protocol, access].join(":")] ?? existing?.domain ?? "";
                       return { ...(existing || {}), ...config, id: protocol + "-" + access, protocol, access, port, publicPort, domain: customDomain.trim() || generatedDomain };
                     });
-                    const ports = services.map((item) => item.port).filter(Boolean);
-                    if (new Set(ports).size !== ports.length)
-                      throw new Error("多个服务使用了相同内部端口，请调整端口起始值");
+                    // Listener conflicts are transport-aware: TCP and UDP may share a numeric port.
                     await call("deploy", { vpsId: vps.id, services });
                     } finally {
                       setDeploying(false);
