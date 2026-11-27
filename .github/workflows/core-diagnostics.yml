@@ -1,0 +1,27 @@
+name: Core diagnostics
+on:
+  push:
+    branches: [core-diagnostics]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  stress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/setup-go@v5
+        with: { go-version: 1.25.4, cache: false }
+      - run: node scripts/download-cores.mjs
+        env: { WITH_SINGBOX: "1", GH_TOKEN: "${{ github.token }}" }
+      - name: Reproduce matrix failure with server and client diagnostics
+        working-directory: fq
+        run: go test -race -v -failfast -run '^TestRealCoreSixProtocolsAndChain$' -count 20 ./internal/manager
+        env:
+          SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
+          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64

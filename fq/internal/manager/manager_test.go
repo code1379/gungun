@@ -260,7 +260,9 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		t.Fatal(e)
 	}
 	path := filepath.Join(root, "sing-box.json")
-	b, _ := json.Marshal(SingBoxConfig(s, root))
+	cfg := SingBoxConfig(s, root)
+	cfg["log"] = M{"level": "debug", "timestamp": true}
+	b, _ := json.Marshal(cfg)
 	_ = os.WriteFile(path, b, 0600)
 	if out, e := exec.Command(sing, "check", "-c", path).CombinedOutput(); e != nil {
 		t.Fatalf("core config: %v: %s", e, out)
@@ -362,8 +364,10 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 				for key, value := range final { exit[key] = value }
 				exit["name"] = "matrix-exit"
 				exit["dialer-proxy"] = entry["name"]
-				result, err := request(M{"proxies": []any{entry, exit}, "mode": "rule", "rules": []string{"MATCH,matrix-exit"}, "log-level": "warning"})
-				if err != nil { t.Fatalf("actual protocol-chain compatibility: %v", err) }
+				result, err := request(M{"proxies": []any{entry, exit}, "mode": "rule", "rules": []string{"MATCH,matrix-exit"}, "log-level": "debug"})
+				if err != nil { logs, _ := os.ReadFile(filepath.Join(root, "server.log"))
+					if len(logs) > 16000 { logs = logs[len(logs)-16000:] }
+					t.Fatalf("actual protocol-chain compatibility: %v\nserver log: %s", err, logs) }
 				if result["speedMBps"] == nil { t.Fatal("chain matrix did not download real data") }
 			})
 		}
@@ -447,3 +451,4 @@ func TestWebsiteListenerTransportCompatibility(t *testing.T) {
 		})
 	}
 }
+
