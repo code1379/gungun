@@ -192,6 +192,23 @@ export class Cloudflare {
       await this.request(`/zones/${zone}/rulesets/${created.id}`, "DELETE");
     };
   }
+  async removeOriginRule(zone: string, hostname: string) {
+    const phase = `/zones/${zone}/rulesets/phases/http_request_origin/entrypoint`;
+    let existing: { id: string; rules: Record<string, unknown>[] } | undefined;
+    try { existing = await this.request(phase); }
+    catch (error) { if (String(error).includes("404")) return async () => {}; throw error; }
+    if (!existing) return async () => {};
+    const ref = `gungun_${hostname.replaceAll(".", "_")}`;
+    const clean = (rules: Record<string, unknown>[]) =>
+      rules.map(({ id: _id, version: _version, last_updated: _updated, ...rule }) => rule);
+    const old = existing.rules || [];
+    const next = clean(old).filter((rule) => rule.ref !== ref);
+    if (next.length === old.length) return async () => {};
+    await this.request(`/zones/${zone}/rulesets/${existing.id}`, "PUT", { rules: next });
+    return async () => {
+      await this.request(`/zones/${zone}/rulesets/${existing!.id}`, "PUT", { rules: clean(old) });
+    };
+  }
   async edgeHostname(zone: string, desired: string, fallback?: string) {
     const packs = await this.request<{ status: string; hosts: string[] }[]>(
       `/zones/${zone}/ssl/certificate_packs?per_page=50`,
