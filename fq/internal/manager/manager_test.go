@@ -95,7 +95,15 @@ func TestNATAndPortConflicts(t *testing.T) {
 	s.Kind = "public"
 	s.Services = []Service{service("snell", 20000), service("anytls", 20000)}
 	if s.Normalize() == nil {
-		t.Fatal("duplicate port accepted")
+		t.Fatal("duplicate TCP port accepted")
+	}
+	s.Services = []Service{service("hysteria2", 20000), service("vless-ws", 20000)}
+	if err := s.Normalize(); err != nil {
+		t.Fatalf("same numeric port should be allowed for UDP and TCP: %v", err)
+	}
+	s.Services = []Service{service("hysteria2", 20000), service("tuic", 20000)}
+	if s.Normalize() == nil {
+		t.Fatal("duplicate UDP port accepted")
 	}
 	s.Services = []Service{service("snell", 20000), service("snell", 20001)}
 	if s.Normalize() == nil {
@@ -433,6 +441,18 @@ func TestTunnelExplicitDisable(t *testing.T) {
 	}
 	if _, e = os.Stat(filepath.Join(m.Root, "tunnel.enabled")); !os.IsNotExist(e) {
 		t.Fatal("disabled tunnel still enabled at boot")
+	}
+}
+
+func TestWebsiteTCPListenerMaySharePortWithUDPService(t *testing.T) {
+	s := fixture()
+	s.Services = []Service{service("hysteria2", 38443)}
+	s.Websites = []Website{{
+		ID: "site", Domain: "site.example.com", Target: "127.0.0.1",
+		TargetPort: 3000, Access: "direct", Port: 38443, PublicPort: 38443, EdgePort: 443,
+	}}
+	if err := s.Normalize(); err != nil {
+		t.Fatalf("TCP website should be allowed to share numeric port with UDP service: %v", err)
 	}
 }
 
