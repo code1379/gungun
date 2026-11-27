@@ -1,0 +1,78 @@
+{
+  "name": "@gungun/desktop",
+  "version": "1.0.0",
+  "description": "Gungun VPS and proxy manager",
+  "author": "Gungun contributors",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && node ../../scripts/create-icon.mjs",
+    "package:mac": "electron-builder --mac --arm64 --publish never"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.0.0",
+    "@gungun/domain": "workspace:*",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "acme-client": "^5.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.555.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "ssh2": "^1.17.0",
+    "tailwind-merge": "^3.4.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@types/ssh2": "^1.15.5",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.1",
+    "tailwindcss": "^4.1.17",
+    "vite": "^7.2.4"
+  },
+  "build": {
+    "appId": "io.gungun.desktop",
+    "productName": "Gungun",
+    "directories": {
+      "output": "../../release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "../../resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "../../resources/THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "Gungun-${version}-${arch}.${ext}",
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "Gungun"
+    },
+    "afterSign": "../../scripts/notarize.cjs",
+    "npmRebuild": false
+  }
+}

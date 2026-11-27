@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+release/
+resources/bin/
+*.db*
+.env*
+coverage/
+test-results/
+playwright-report/
+apps/desktop/build/icon.png

@@ -1,0 +1,154 @@
+name: Release
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.release_tag || github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-go@v5
+        with: { go-version: 1.25.4, cache: false }
+      - run: pnpm install --frozen-lockfile
+      - run: mkdir -p test-results && pnpm lint && pnpm typecheck && pnpm test | tee test-results/unit.txt
+      - run: pnpm cores:download
+        env: { WITH_SINGBOX: "1", GH_TOKEN: "${{ github.token }}" }
+      - working-directory: fq
+        run: go test -race -v ./... | tee ../test-results/go.txt
+        env:
+          SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
+          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
+      - run: pnpm test:integration | tee test-results/chain.txt
+      - run: pnpm fq:build
+        env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
+      - name: Actual systemd, Caddy and rollback verification
+        run: node tests/systemd-integration.mjs | tee test-results/systemd.txt
+      - name: Stage final Linux assets in a draft release
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          node scripts/check-draft.mjs
+          cat test-results/unit.txt test-results/go.txt test-results/chain.txt test-results/systemd.txt > test-results/test-report-linux.txt
+          gh release upload "$RELEASE_TAG" resources/bin/fq-linux-* test-results/test-report-linux.txt --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        with:
+          name: manual-test-fq
+          path: |
+            resources/bin/fq-linux-*
+            test-results/
+          retention-days: 1
+          if-no-files-found: error
+  macos:
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-go@v5
+        with: { go-version: 1.25.4, cache: false }
+      - run: pnpm install --frozen-lockfile
+      - name: Set final application version
+        if: github.event_name != 'workflow_dispatch'
+        run: node scripts/set-version.mjs
+        env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
+      - run: pnpm fq:build
+        env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
+      - run: pnpm cores:download
+        env: { BUILD_ARCH: "arm64", GH_TOKEN: "${{ github.token }}" }
+      - run: pnpm build && pnpm test:desktop
+      - name: Actual macOS proxy chain and failure localization
+        run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
+      - name: Package DMG with optional signing and notarization
+        run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - run: node scripts/verify-dmg.mjs | tee test-results/dmg.txt
+      - name: Stage verified DMG and report in draft release
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          node scripts/check-draft.mjs
+          ditto -c -k test-results test-report-macos-arm64.zip
+          gh release upload "$RELEASE_TAG" release/*.dmg test-report-macos-arm64.zip --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        with:
+          name: manual-test-macos-arm64
+          path: |
+            release/*.dmg
+            test-results/
+          retention-days: 1
+          if-no-files-found: error
+  publish:
+    if: github.event_name != 'workflow_dispatch'
+    needs: [verify, macos]
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+      - name: Validate all final assets and publish together
+        run: |
+          node scripts/check-draft.mjs
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --dir release-assets
+          test "$(find release-assets -name '*.dmg' | wc -l)" -eq 1
+          test "$(find release-assets -name 'fq-linux-*' | wc -l)" -eq 2
+          test -s release-assets/test-report-linux.txt
+          test -s release-assets/test-report-macos-arm64.zip
+          test -s "release-assets/Gungun-${RELEASE_TAG#v}-arm64.dmg"
+          cp docs/使用说明.md docs/开发文档.md docs/测试报告.md release-assets/
+          node scripts/final-report.mjs
+          cd release-assets
+          sha256sum *.dmg fq-linux-* > SHA256SUMS
+          gh release upload "$RELEASE_TAG" SHA256SUMS *.md --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --notes-file ../docs/release-notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
