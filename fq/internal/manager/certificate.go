@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -50,10 +51,19 @@ func (m *Manager) CSR(domain string, extra []string) (M, error) {
 		return nil, e
 	}
 	names := []string{domain, "*." + domain}
+	seen := map[string]bool{domain: true, "*." + domain: true}
 	for _, name := range extra {
 		if !validDomain.MatchString(name) {
 			return nil, errors.New("invalid additional domain")
 		}
+		// *.domain 已经覆盖恰好一层子域，避免 Let's Encrypt 收到冗余 SAN。
+		suffix := "." + domain
+		label := strings.TrimSuffix(name, suffix)
+		coveredByWildcard := strings.HasSuffix(name, suffix) && label != "" && !strings.Contains(label, ".")
+		if seen[name] || coveredByWildcard {
+			continue
+		}
+		seen[name] = true
 		names = append(names, name)
 	}
 	csr, e := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "*." + domain}, DNSNames: names}, key)

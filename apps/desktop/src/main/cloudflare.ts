@@ -214,30 +214,21 @@ export class Cloudflare {
     };
   }
   async edgeHostname(zone: string, desired: string, fallback?: string) {
+    // Free 套餐依赖 Universal SSL / Edge Certificate Packs。
+    // 不请求 custom_certificates：该接口在 Free 套餐会返回 1011，
+    // 而且自定义上传证书不是 Gungun 节点部署的前置条件。
     const packs = await this.request<{ status: string; hosts: string[] }[]>(
       `/zones/${zone}/ssl/certificate_packs?per_page=50`,
     );
     const hosts = packs
       .filter((p) => p.status === "active")
       .flatMap((p) => p.hosts || []);
-    try {
-      const custom = await this.request<{ status: string; hosts: string[] }[]>(
-        `/zones/${zone}/custom_certificates?per_page=50`,
-      );
-      hosts.push(
-        ...custom
-          .filter((p) => p.status === "active")
-          .flatMap((p) => p.hosts || []),
-      );
-    } catch (e) {
-      if (!/403|404/.test(String(e))) throw e;
-    }
     const covered = (host: string) =>
       hosts.some((pattern) => matchesDNSName(pattern, host));
     if (covered(desired)) return desired;
     if (fallback && covered(fallback)) return fallback;
     throw new Error(
-      `Cloudflare 当前生效的边缘证书不覆盖 ${desired}。请选择已覆盖的一级域名，或在 Cloudflare 配置覆盖该域名的边缘证书后重试。VPS 的 Let's Encrypt 证书不会改变 Edge 证书覆盖范围。`,
+      `Cloudflare 当前生效的 Universal SSL 边缘证书不覆盖 ${desired}。如果这是 Gungun 自动生成的域名，请检查 Zone 的 Universal SSL 是否已启用；自定义域名则需要使用当前边缘证书已覆盖的主机名。`,
     );
   }
   async createChallenge(zone: string, name: string, value: string) {

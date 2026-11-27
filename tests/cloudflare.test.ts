@@ -155,15 +155,26 @@ describe("Cloudflare API 与补偿", () => {
     expect(order).toEqual([3, 2, 1]);
   });
 });
-it("Edge 覆盖不足时仅自动域名回退，显式深层域名明确拒绝", async () => {
-  const service = await server((req, _body, res) =>
+it("Free 套餐只检查 Universal SSL 证书包，不请求受限的 Custom Certificates API", async () => {
+  const requests: string[] = [];
+  const service = await server((req, _body, res) => {
+    requests.push(req.url || "");
+    if (req.url?.includes("custom_certificates")) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        success: false,
+        result: null,
+        errors: [{ code: 1011, message: "Plan level does not allow custom certificates with type" }],
+      }));
+      return;
+    }
     reply(
       res,
       req.url?.includes("certificate_packs")
         ? [{ status: "active", hosts: ["example.com", "*.example.com"] }]
         : [],
-    ),
-  );
+    );
+  });
   try {
     const cf = new Cloudflare(
       { cloudflareEmail: "x", cloudflareKey: "x" },
@@ -178,7 +189,8 @@ it("Edge 覆盖不足时仅自动域名回退，显式深层域名明确拒绝",
     ).toBe("cdn-a7k2p.example.com");
     await expect(
       cf.edgeHostname("z", "custom.a7k2p.example.com"),
-    ).rejects.toThrow("边缘证书不覆盖");
+    ).rejects.toThrow("Universal SSL");
+    expect(requests.every((path) => !path.includes("custom_certificates"))).toBe(true);
   } finally {
     await service.close();
   }

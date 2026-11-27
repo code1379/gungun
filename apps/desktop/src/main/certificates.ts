@@ -2,10 +2,36 @@ import acme from "acme-client";
 import { Resolver } from "node:dns/promises";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { VPS } from "@gungun/domain";
+import {
+  matchesDNSName,
+  type RemoteState,
+  type VPS,
+} from "@gungun/domain";
 import { Cloudflare } from "./cloudflare";
 import type { SSH } from "./ssh";
 import type { Store } from "./store";
+
+/**
+ * 返回 CSR 中除基础域名和一级通配符以外真正需要的 SAN。
+ * *.namespace.zone 已经覆盖 foo.namespace.zone，不能再把 foo.namespace.zone
+ * 作为独立 SAN 提交给 Let's Encrypt，否则会被判定为 redundant identifier。
+ */
+export function certificateExtraDomains(
+  baseDomain: string,
+  candidates: string[],
+) {
+  const wildcard = `*.${baseDomain}`;
+  const seen = new Set([baseDomain.toLowerCase(), wildcard.toLowerCase()]);
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const name = candidate.trim().toLowerCase();
+    if (!name || seen.has(name) || matchesDNSName(wildcard, name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
+}
+
 export class Certificates {
   private accountKey: Promise<Buffer> | undefined;
   constructor(
@@ -13,29 +39,31 @@ export class Certificates {
     private ssh: SSH,
     private directory: string,
   ) {}
-  async issue(vps: VPS, extraDomains: string[] = []) {
+  async issue(
+    vps: VPS,
+    extraDomains: string[] = [],
+    currentState?: RemoteState,
+  ) {
     const settings = this.store.settings();
     if (!settings.acmeEmail) throw new Error("请在设置中填写 ACME 邮箱");
     if (!vps.zoneName || !vps.zoneId)
       throw new Error("请先选择 Cloudflare Zone");
     const domain = `${vps.namespace}.${vps.zoneName}`;
-    const remote = await this.ssh.state(vps);
-    const domains = [
-      ...new Set([
-        ...remote.services
-          .filter(
-            (s) =>
-              s.access !== "argo" &&
-              !["snell", "vless-reality"].includes(s.protocol) &&
-              s.domain,
-          )
-          .map((s) => s.domain),
-        ...remote.websites
-          .filter((w) => w.access !== "argo")
-          .map((w) => w.domain),
-        ...extraDomains,
-      ]),
-    ];
+    const remote = currentState ?? (await this.ssh.state(vps));
+    const domains = certificateExtraDomains(domain, [
+      ...remote.services
+        .filter(
+          (s) =>
+            s.access !== "argo" &&
+            !["snell", "vless-reality"].includes(s.protocol) &&
+            s.domain,
+        )
+        .map((s) => s.domain),
+      ...remote.websites
+        .filter((w) => w.access !== "argo")
+        .map((w) => w.domain),
+      ...extraDomains,
+    ]);
     const { csr } = await this.ssh.fq<{ csr: string }>(vps, "cert csr", {
       domain,
       domains,
@@ -95,7 +123,18 @@ export class Certificates {
           }
         },
       });
-      return await this.ssh.fq(vps, "cert install", { certificate: cert });
+      const installed = await this.ssh.fq<{
+        notAfter: string;
+        backupId: string;
+      }>(vps, "cert install", { certificate: cert });
+      return {
+        ...installed,
+        certificate: {
+          notAfter: installed.notAfter,
+          domain,
+          domains: [domain, `*.${domain}`, ...domains],
+        },
+      };
     } finally {
       for (const undo of cleanup.values()) await undo();
     }

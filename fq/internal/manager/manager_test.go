@@ -281,7 +281,14 @@ func TestLock(t *testing.T) {
 }
 func TestCSR(t *testing.T) {
 	m := fakeManager(t)
-	r, e := m.CSR("a7k2p.example.com", []string{"custom.example.com"})
+	r, e := m.CSR("a7k2p.example.com", []string{
+		"node.a7k2p.example.com",
+		"a7k2p.example.com",
+		"*.a7k2p.example.com",
+		"custom.example.com",
+		"custom.example.com",
+		"deep.node.a7k2p.example.com",
+	})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -294,8 +301,26 @@ func TestCSR(t *testing.T) {
 	}
 	block, _ := pem.Decode([]byte(r["csr"].(string)))
 	csr, e := x509.ParseCertificateRequest(block.Bytes)
-	if e != nil || len(csr.DNSNames) != 3 {
-		t.Fatal("CSR SANs")
+	if e != nil {
+		t.Fatalf("parse CSR: %v", e)
+	}
+	want := map[string]bool{
+		"a7k2p.example.com": true,
+		"*.a7k2p.example.com": true,
+		"custom.example.com": true,
+		"deep.node.a7k2p.example.com": true,
+	}
+	if len(csr.DNSNames) != len(want) {
+		t.Fatalf("CSR SANs = %#v, want %#v", csr.DNSNames, want)
+	}
+	for _, name := range csr.DNSNames {
+		if !want[name] {
+			t.Fatalf("unexpected redundant SAN %q", name)
+		}
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing SANs: %#v", want)
 	}
 }
 func makeCertificates(t *testing.T, dir string) {
