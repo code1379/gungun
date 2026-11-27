@@ -1,6 +1,6 @@
 {
   "name": "@gungun/desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Gungun VPS and proxy manager",
   "author": "Gungun contributors",
   "private": true,
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && node ../../scripts/create-icon.mjs",
-    "package:mac": "electron-builder --mac --publish never"
+    "package:mac": "electron-builder --mac --arm64 --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",

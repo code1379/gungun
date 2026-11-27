@@ -56,15 +56,7 @@ jobs:
           path: test-results/
           if-no-files-found: warn
   macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +73,7 @@ jobs:
       - run: pnpm fq:build
       - run: pnpm cores:download
         env:
-          BUILD_ARCH: ${{ matrix.arch }}
+          BUILD_ARCH: arm64
           GH_TOKEN: ${{ github.token }}
       - run: pnpm build
       - name: Actual macOS proxy chain and failure localization
@@ -89,7 +81,7 @@ jobs:
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
       - name: Build unsigned DMG for testing
-        run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Mount DMG, install app into isolated directory and launch
@@ -98,7 +90,7 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          name: test-build-macos-${{ matrix.arch }}
+          name: test-build-macos-arm64
           retention-days: 1
           path: |
             release/*.dmg

@@ -2,7 +2,7 @@
 
 macOS VPS 与代理节点管理端，以及 Linux 远程管理程序 fq。Electron / React / TypeScript / SQLite + Go Monorepo。
 
-> 开发验证中。尚未创建正式 Release；测试安装包仅由 Actions Artifact 提供。未经实际执行的验收项目不会标为通过。
+> macOS 安装包仅提供 Apple Silicon arm64，适用于 M1 Pro 等 M 系列芯片；fq 提供 Linux amd64 / arm64。正式资产由完整发布门禁统一生成，下载见 [GitHub Releases](https://github.com/code1379/gungun/releases)。
 
 ## 开发
 

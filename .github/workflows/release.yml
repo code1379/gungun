@@ -69,13 +69,7 @@ jobs:
           if-no-files-found: error
   macos:
     needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: macos-15, arch: arm64 }
-          - { runner: macos-15-intel, arch: x64 }
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 40
     permissions: { contents: write }
     steps:
@@ -95,13 +89,12 @@ jobs:
       - run: pnpm fq:build
         env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
       - run: pnpm cores:download
-        env:
-          { BUILD_ARCH: "${{ matrix.arch }}", GH_TOKEN: "${{ github.token }}" }
+        env: { BUILD_ARCH: "arm64", GH_TOKEN: "${{ github.token }}" }
       - run: pnpm build && pnpm test:desktop
       - name: Actual macOS proxy chain and failure localization
         run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Package DMG with optional signing and notarization
-        run: pnpm --filter @gungun/desktop exec electron-builder --mac --${{ matrix.arch }} --publish never
+        run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -114,8 +107,8 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: |
           node scripts/check-draft.mjs
-          ditto -c -k test-results test-report-macos-${{ matrix.arch }}.zip
-          gh release upload "$RELEASE_TAG" release/*.dmg test-report-macos-${{ matrix.arch }}.zip --clobber
+          ditto -c -k test-results test-report-macos-arm64.zip
+          gh release upload "$RELEASE_TAG" release/*.dmg test-report-macos-arm64.zip --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
@@ -124,7 +117,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         with:
-          name: manual-test-macos-${{ matrix.arch }}
+          name: manual-test-macos-arm64
           path: |
             release/*.dmg
             test-results/
@@ -144,11 +137,11 @@ jobs:
           node scripts/check-draft.mjs
           mkdir release-assets
           gh release download "$RELEASE_TAG" --dir release-assets
-          test "$(find release-assets -name '*.dmg' | wc -l)" -eq 2
+          test "$(find release-assets -name '*.dmg' | wc -l)" -eq 1
           test "$(find release-assets -name 'fq-linux-*' | wc -l)" -eq 2
           test -s release-assets/test-report-linux.txt
           test -s release-assets/test-report-macos-arm64.zip
-          test -s release-assets/test-report-macos-x64.zip
+          test -s "release-assets/Gungun-${RELEASE_TAG#v}-arm64.dmg"
           cp docs/使用说明.md docs/开发文档.md docs/测试报告.md release-assets/
           node scripts/final-report.mjs
           cd release-assets
