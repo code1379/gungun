@@ -729,7 +729,7 @@ export default function Nodes() {
               {!["snell", "vless-reality"].includes(editing.protocol) && (
                 <Field
                   label="证书 SHA256 固定指纹"
-                  hint="可选，支持带冒号的十六进制指纹。"
+                  hint="仅用于保留导入和导出参数；sing-box 不支持整张证书指纹，填写后无法执行测试。请使用可信证书。"
                 >
                   <Input
                     value={editing.certificatePin}

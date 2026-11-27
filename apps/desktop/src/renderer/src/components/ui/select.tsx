@@ -1,6 +1,5 @@
 // Adapted from the official shadcn/ui Base UI registry (MIT).
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react";
-;
 import * as React from "react";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { cn } from "@/lib/utils";

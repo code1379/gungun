@@ -1,6 +1,5 @@
 // Adapted from the official shadcn/ui Base UI registry (MIT).
 import { CheckIcon } from "lucide-react";
-;
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/utils";
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {

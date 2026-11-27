@@ -78,6 +78,8 @@ jobs:
         run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
+        env:
+          GUNGUN_SCREENSHOT_LOG: "1"
       - name: Build unsigned DMG for testing
         run: pnpm --filter @gungun/desktop exec electron-builder --mac --arm64 --publish never
         env:
