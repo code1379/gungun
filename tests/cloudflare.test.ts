@@ -110,7 +110,7 @@ describe("Cloudflare API 与补偿", () => {
     const oldRule = { ref: "gungun_cdn_example_com", expression: '(http.host eq "cdn.example.com")', action: "route" };
     const service = await server((req, body, res) => {
       calls.push({ method: req.method!, url: req.url || "", body });
-      if (req.method === "GET") reply(res, [{ id: "ruleset", rules: [oldRule, { ref: "other", action: "route" }] }]);
+      if (req.method === "GET") reply(res, { id: "ruleset", rules: [oldRule, { ref: "other", action: "route" }] });
       else reply(res, { id: "ruleset" });
     });
     try {
