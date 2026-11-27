@@ -84,7 +84,7 @@ for (const asset of assets) {
   const binaryDigest = createHash("sha256").update(executable).digest("hex");
   await writeFile(
     markerPath,
-    JSON.stringify({ releaseDigest: entry.digest, binaryDigest }, null, 2) + "\\n",
+    JSON.stringify({ releaseDigest: entry.digest, binaryDigest }, null, 2),
     { mode: 0o600 },
   );
   console.log(`Verified ${asset.name}: ${entry.digest}`);
