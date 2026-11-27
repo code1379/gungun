@@ -260,6 +260,13 @@ describe("能力与连接校验", () => {
         .success,
     ).toBe(true);
   });
+  it("VLESS + WS 支持 HTTP/HTTPS CDN Edge 端口并拒绝跨模式端口", () => {
+    const base = { id: "ws", protocol: "vless-ws", port: 45516, publicPort: 45516, access: "cdn" };
+    expect(serviceSchema.safeParse({ ...base, edgeScheme: "http", edgePort: 80 }).success).toBe(true);
+    expect(serviceSchema.safeParse({ ...base, edgeScheme: "http", edgePort: 443 }).success).toBe(false);
+    expect(serviceSchema.safeParse({ ...base, edgeScheme: "https", edgePort: 2053 }).success).toBe(true);
+    expect(serviceSchema.safeParse({ ...base, edgeScheme: "https", edgePort: 8880 }).success).toBe(false);
+  });
   it("检测 SSH 跳板机循环和缺失引用", () => {
     const a = vpsSchema.parse({
       id: randomUUID(),
