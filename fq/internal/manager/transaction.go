@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -304,7 +305,12 @@ func redactedState(s State) State              { s.TunnelToken = ""; s.RealityPr
 func (m *Manager) PublicState() (State, error) { s, e := m.Load(); return redactedState(s), e }
 func (m *Manager) verify(s State) error {
 	var last error
-	for attempt := 0; attempt < 40; attempt++ {
+	attempts := 40
+	if s.TunnelToken != "" {
+		// cloudflared needs time to establish its outbound connections and report /ready.
+		attempts = 150
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		last = m.verifyOnce(s)
 		if last == nil {
 			return nil
@@ -313,6 +319,19 @@ func (m *Manager) verify(s State) error {
 	}
 	return last
 }
+
+func checkTunnelReady(client *http.Client, endpoint string) error {
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return fmt.Errorf("Cloudflare Tunnel connector is not ready: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("Cloudflare Tunnel connector is not connected: /ready returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
 func (m *Manager) verifyOnce(s State) error {
 	for _, item := range []struct {
 		name    string
@@ -320,6 +339,12 @@ func (m *Manager) verifyOnce(s State) error {
 	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", len(s.Websites) > 0}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		if item.enabled {
 			if _, e := m.ServiceAction(item.name, "status"); e != nil { return e }
+		}
+	}
+	if s.TunnelToken != "" {
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		if err := checkTunnelReady(client, "http://"+tunnelMetricsAddress+"/ready"); err != nil {
+			return err
 		}
 	}
 	for _, v := range s.Services {

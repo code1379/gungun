@@ -576,3 +576,21 @@ func TestOpenRCServiceActionUsesRunlevel(t *testing.T) {
 	want = "rc-update del gungun-sing-box default|rc-service --ifstarted gungun-sing-box stop"
 	if strings.Join(calls, "|") != want { t.Fatalf("stop calls = %q, want %q", strings.Join(calls, "|"), want) }
 }
+
+func TestTunnelReadinessRequiresConnectedConnector(t *testing.T) {
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthy.Close()
+	if err := checkTunnelReady(healthy.Client(), healthy.URL+"/ready"); err != nil {
+		t.Fatalf("healthy connector rejected: %v", err)
+	}
+
+	unhealthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer unhealthy.Close()
+	if err := checkTunnelReady(unhealthy.Client(), unhealthy.URL+"/ready"); err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("unhealthy connector accepted: %v", err)
+	}
+}

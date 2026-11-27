@@ -2,6 +2,7 @@ package manager
 
 import (
 	"archive/tar"
+	"strings"
 	"bytes"
 	"compress/gzip"
 	"os"
@@ -92,5 +93,27 @@ func TestExtractExecutableFileDoesNotReplaceTargetWhenMissing(t *testing.T) {
 	}
 	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
 		t.Fatalf("target should not be created, stat error = %v", statErr)
+	}
+}
+
+func TestTunnelServiceUnitsLoadTokenAndExposeReadiness(t *testing.T) {
+	command := "/usr/local/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20241 run"
+	systemd := systemdUnit("gungun-tunnel", command, "/etc/gungun")
+	if !strings.Contains(systemd, "EnvironmentFile=/etc/gungun/tunnel.env") {
+		t.Fatal("systemd Tunnel unit must load the protected token environment file")
+	}
+	if !strings.Contains(systemd, "ExecStart="+command) {
+		t.Fatal("systemd Tunnel unit missing cloudflared command")
+	}
+
+	openrc := openRCUnit("gungun-tunnel", "/usr/local/bin/cloudflared", "tunnel --no-autoupdate --metrics 127.0.0.1:20241 run", "/etc/gungun")
+	for _, expected := range []string{
+		"sed -n 's/^TUNNEL_TOKEN=//p' /etc/gungun/tunnel.env",
+		"export TUNNEL_TOKEN",
+		"--metrics 127.0.0.1:20241",
+	} {
+		if !strings.Contains(openrc, expected) {
+			t.Fatalf("OpenRC Tunnel unit missing %q", expected)
+		}
 	}
 }
