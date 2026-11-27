@@ -44,7 +44,8 @@ jobs:
       - run: pnpm fq:build
       - name: Real systemd deployment, Caddy and rollback
         run: node tests/systemd-integration.mjs
-      - run: pnpm build  macos:
+      - run: pnpm build
+  macos:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
