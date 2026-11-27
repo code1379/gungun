@@ -244,7 +244,11 @@ export class Orchestrator {
         if (!service.domain && vps.zoneName)
           service.domain = `${service.access === "cdn" ? "cdn" : service.access === "argo" ? "argo" : "node"}.${vps.namespace}.${vps.zoneName}`;
         state.services = [
-          ...state.services.filter((s) => s.id !== service!.id),
+          ...state.services.filter(
+            (s) =>
+              s.id !== service!.id &&
+              !(s.protocol === service!.protocol && s.access === service!.access),
+          ),
           service,
         ];
       }
