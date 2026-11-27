@@ -2,7 +2,6 @@ import { z } from "zod";
 import { randomUUID, randomBytes } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { isIP } from "node:net";
 import { dialog } from "electron";
 import {

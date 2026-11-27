@@ -26,24 +26,26 @@ export default function Settings() {
   const [result, setResult] = useState<unknown>(null);
   const [keyStatus, setKeyStatus] = useState<SSHKeyStatus | null>(null);
   const [rotationCandidate, setRotationCandidate] = useState<SSHKeyCandidate | null>(null);
+  const values = draft || data?.settings;
+  useEffect(() => {
+    let active = true;
+    if (data) {
+      void call<SSHKeyStatus>("sshKeyStatus")
+        .then((status) => {
+          if (active) setKeyStatus(status);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [call, data]);
   if (!data) return null;
-  const values = draft || data.settings;
   const update = <K extends keyof SettingsType>(
     key: K,
     value: SettingsType[K],
   ) => setDraft({ ...values, [key]: value });
   const sshKeyPath = values.sshKeyPath || "~/.ssh/id_ed25519_gungun";
-  useEffect(() => {
-    let active = true;
-    void call<SSHKeyStatus>("sshKeyStatus")
-      .then((status) => {
-        if (active) setKeyStatus(status);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [call]);
   return (
     <>
       <PageHeader
