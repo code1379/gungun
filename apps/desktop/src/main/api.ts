@@ -21,6 +21,7 @@ import {
   type ProxyNode,
   type Service,
   type Tag,
+  type Task,
   type VPS,
 } from "@gungun/domain";
 import type { Store } from "./store";
@@ -278,6 +279,17 @@ export class API {
         const parsed = q.parse(input);
         const services = parsed.services ?? (parsed.service ? [parsed.service] : undefined);
         const v = s.get<VPS>("vps", parsed.vpsId);
+        const activeDeployment = s.all<Task>("tasks").find(
+          (task) =>
+            task.vpsId === v.id &&
+            (task.type === "部署网站" || task.type.startsWith("批量部署协议服务")) &&
+            ["queued", "running", "cancelling"].includes(task.state),
+        );
+        if (activeDeployment) {
+          throw new Error(
+            `${v.name} 已有部署任务正在执行（${activeDeployment.type}），请等待完成后再提交`,
+          );
+        }
         const protocolNames: Record<Service["protocol"], string> = {
           hysteria2: "Hysteria2",
           tuic: "TUIC",

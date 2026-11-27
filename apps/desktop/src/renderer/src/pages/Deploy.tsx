@@ -101,6 +101,9 @@ export default function Deploy() {
   const [installTaskId, setInstallTaskId] = useState<string | null>(null);
   const [bindingZone, setBindingZone] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [deployingVpsId, setDeployingVpsId] = useState<string | null>(null);
+  const [deployTaskId, setDeployTaskId] = useState<string | null>(null);
+  const deploySubmittingRef = useRef(false);
   useEffect(() => {
     if (!data || !installTaskId) return;
     const task = data.tasks.find((item) => item.id === installTaskId);
@@ -132,8 +135,27 @@ export default function Deploy() {
         setRemoteStatus("error");
       });
   }, [data?.tasks, installTaskId, vpsId, call]);
+  useEffect(() => {
+    if (!data || !deployTaskId) return;
+    const task = data.tasks.find((item) => item.id === deployTaskId);
+    if (!task || ["queued", "running", "cancelling"].includes(task.state)) return;
+    setDeployTaskId(null);
+    setDeployingVpsId(null);
+  }, [data?.tasks, deployTaskId]);
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
+  const activeDeploymentTask = vps
+    ? data.tasks.find(
+        (task) =>
+          task.vpsId === vps.id &&
+          (task.type === "部署网站" || task.type.startsWith("批量部署协议服务")) &&
+          ["queued", "running", "cancelling"].includes(task.state),
+      )
+    : undefined;
+  const deployBusy = !!vps && (
+    deployingVpsId === vps.id ||
+    activeDeploymentTask !== undefined
+  );
   const selectedZone = zones.find((zone) => zone.id === zoneId);
   const updateService = <K extends keyof Service,>(protocol: Service["protocol"], key: K, value: Service[K]) =>
     setServiceConfigs((current) => ({ ...current, [protocol]: { ...current[protocol], [key]: value } }));
@@ -366,8 +388,12 @@ export default function Deploy() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (deploySubmittingRef.current || deployBusy) return;
+                  deploySubmittingRef.current = true;
+                  setDeployingVpsId(vps.id);
+                  setDeploying(true);
                   void run(async () => {
-                    setDeploying(true);
+                    let submitted = false;
                     try {
                     const needsZone = selectedCombinations.some(({ protocol, access }) =>
                       access !== "direct" || !["snell", "vless-reality"].includes(protocol),
@@ -416,9 +442,13 @@ export default function Deploy() {
                       return { ...(existing || {}), ...config, id: protocol + "-" + access, protocol, access, port, publicPort, domain: customDomain.trim() || generatedDomain };
                     });
                     // Listener conflicts are transport-aware: TCP and UDP may share a numeric port.
-                    await call("deploy", { vpsId: vps.id, services });
+                    const taskId = await call<string>("deploy", { vpsId: vps.id, services });
+                    setDeployTaskId(taskId);
+                    submitted = true;
                     } finally {
+                      deploySubmittingRef.current = false;
                       setDeploying(false);
+                      if (!submitted) setDeployingVpsId(null);
                     }
                   }, "部署任务已加入队列，请在任务中心查看执行与回滚结果");
                 }}
@@ -594,9 +624,9 @@ export default function Deploy() {
                   })}
                 </div>
                 <div className="form-actions">
-                  <Button type="submit" variant="default" loading={deploying} disabled={deploying || selectedProtocols.length === 0 || (selectedProtocols.includes("vless-ws") && accessModes.length === 0)}>
+                  <Button type="submit" variant="default" loading={deployBusy} disabled={deployBusy || selectedProtocols.length === 0 || (selectedProtocols.includes("vless-ws") && accessModes.length === 0)}>
                     <Rocket size={16} />
-                    {deploying ? "正在提交批量部署…" : `批量部署到 ${vps.name}（${selectedCombinations.length} 项）`}
+                    {deploying ? "正在提交批量部署…" : activeDeploymentTask ? "该 VPS 部署任务执行中…" : `批量部署到 ${vps.name}（${selectedCombinations.length} 项）`}
                   </Button>
                 </div>
               </form>

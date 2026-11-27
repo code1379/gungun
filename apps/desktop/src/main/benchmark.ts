@@ -36,6 +36,31 @@ export function parseCurlLatencySamples(output: string): number[] {
     )
     .map(([, seconds]) => seconds * 1000);
 }
+export async function probeTcpEndpoint(
+  host: string,
+  port: number,
+  timeoutMs = 5000,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(
+      () => finish(new Error(`TCP connection timed out after ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+    socket.once("connect", () => finish());
+    socket.once("error", (error) => finish(error));
+  });
+}
+
 async function freePort() {
   const s = net.createServer();
   await new Promise<void>((r, e) =>
@@ -64,7 +89,22 @@ export class Benchmark {
     )
       downloadURL.searchParams.set("bytes", String(settings.downloadBytes));
     const config = singboxConfig(nodes, chain, await freePort());
-    if (process.env.GUNGUN_CORE_DEBUG) config.log.level = "debug";
+    const snellNode =
+      !chain && nodes.length === 1 && nodes[0].protocol === "snell"
+        ? nodes[0]
+        : undefined;
+    if (snellNode || process.env.GUNGUN_CORE_DEBUG) config.log.level = "debug";
+    let snellTcpReachable = false;
+    if (!source && snellNode) {
+      try {
+        await probeTcpEndpoint(snellNode.address, snellNode.port);
+        snellTcpReachable = true;
+      } catch (error) {
+        throw new Error(
+          `${snellNode.name}：Snell v6 TCP ${snellNode.address}:${snellNode.port} 无法连接。请检查 VPS 上该端口是否监听 TCP、NAT 映射和防火墙。底层错误：${String(error)}`,
+        );
+      }
+    }
     if (source)
       return this.ssh.fq<Measurement>(source, "bench", {
         config,
@@ -189,9 +229,17 @@ export class Benchmark {
       }
       return { latencyMs, speedMBps, error: null };
     } catch (e) {
-      throw new Error(
-        `${String(e)}${runtimeLog ? `\n核心日志：${runtimeLog}` : ""}`,
-      );
+      const detail = `${String(e)}${runtimeLog ? `\n核心日志：${runtimeLog}` : ""}`;
+      if (
+        snellNode &&
+        snellTcpReachable &&
+        (String(e).includes("curl: (28)") || /timed out/i.test(String(e)))
+      ) {
+        throw new Error(
+          `${snellNode.name}：TCP 端口可达，但 Snell v6 代理握手或后续请求超时。请核对客户端与服务端 PSK、Snell v6 mode（当前默认 default），并检查服务端 sing-box 日志。\n${detail}`,
+        );
+      }
+      throw new Error(detail);
     } finally {
       if (child?.pid) {
         child.kill("SIGTERM");
