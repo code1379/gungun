@@ -454,3 +454,20 @@ func TestWebsiteListenerTransportCompatibility(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenRCServiceActionUsesRunlevel(t *testing.T) {
+	m := fakeManager(t)
+	m.InitSystem = "openrc"
+	var calls []string
+	m.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+		return []byte("ok"), nil
+	}
+	if _, err := m.ServiceAction("gungun-sing-box", "restart"); err != nil { t.Fatal(err) }
+	want := "rc-update add gungun-sing-box default|rc-service gungun-sing-box restart"
+	if strings.Join(calls, "|") != want { t.Fatalf("restart calls = %q, want %q", strings.Join(calls, "|"), want) }
+	calls = nil
+	if _, err := m.ServiceAction("gungun-sing-box", "stop"); err != nil { t.Fatal(err) }
+	want = "rc-update del gungun-sing-box default|rc-service --ifstarted gungun-sing-box stop"
+	if strings.Join(calls, "|") != want { t.Fatalf("stop calls = %q, want %q", strings.Join(calls, "|"), want) }
+}
