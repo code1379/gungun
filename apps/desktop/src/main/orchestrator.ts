@@ -421,7 +421,12 @@ export class Orchestrator {
         state.services.push(service);
       }
 
-      if (!state.camouflage && vps.zoneId && vps.zoneName) {
+      if (
+        !state.camouflage &&
+        services.some((service) => service.protocol === "vless-ws") &&
+        vps.zoneId &&
+        vps.zoneName
+      ) {
         if (!vps.accountId) throw new Error("部署共享伪装站前，请先绑定 Cloudflare Account 和 Zone");
         const domain = await step("检查共享伪装站 Edge 证书覆盖", () =>
           cf.edgeHostname(vps.zoneId, `web-${vps.namespace}.${vps.zoneName}`),
