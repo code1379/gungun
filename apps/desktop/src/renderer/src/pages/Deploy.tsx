@@ -67,10 +67,22 @@ export default function Deploy() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void run(
-                    () => call("deploy", { vpsId: vps.id, service }),
-                    "部署任务已加入队列，请在任务中心查看执行与回滚结果",
-                  );
+                  void run(async () => {
+                    if (service.protocol !== "vless-reality") {
+                      const selectedZone = zones.find((zone) => zone.id === zoneId);
+                      if (!vps.zoneName && !selectedZone)
+                        throw new Error("请先读取并选择 Cloudflare Zone，再部署需要域名的协议");
+                      if (selectedZone) {
+                        await call("saveVps", {
+                          ...vps,
+                          zoneId: selectedZone.id,
+                          zoneName: selectedZone.name,
+                          accountId: selectedZone.account.id,
+                        });
+                      }
+                    }
+                    await call("deploy", { vpsId: vps.id, service });
+                  }, "部署任务已加入队列，请在任务中心查看执行与回滚结果");
                 }}
               >
                 <div className="section-heading">
@@ -106,6 +118,37 @@ export default function Deploy() {
                   ))}
                 </div>
                 <div className="form-grid">
+                  {service.protocol !== "vless-reality" && (
+                    <Field
+                      label="Cloudflare Zone"
+                      hint={vps.zoneName ? "当前绑定：" + vps.zoneName : "首次部署需要选择托管该域名的 Cloudflare Zone。选择后会保存到这台 VPS。"}
+                      help={{
+                        title: "选择 Cloudflare Zone",
+                        description: "Zone 是 Cloudflare 托管的域名区域，例如 example.com。Gungun 使用设置中保存的 Global API Key 读取可用 Zone，并在部署时创建 DNS、证书挑战和 Tunnel 配置。",
+                        steps: [
+                          "先在「设置 → Cloudflare」填写账号邮箱与 Global API Key。",
+                          "点击「读取 Zone」加载当前账号有权管理的域名。",
+                          "选择准备给这台 VPS 使用的域名区域。",
+                          "Gungun 会把 Zone 绑定到这台 VPS，并使用自动生成的独立域名空间。",
+                        ],
+                        url: "https://dash.cloudflare.com/",
+                        linkLabel: "打开 Cloudflare 控制台",
+                      }}
+                    >
+                      <div className="input-action">
+                        <Select value={zoneId} onValueChange={setZoneId}>
+                          <option value="">选择 Cloudflare Zone</option>
+                          {vps.zoneId && !zones.some((z) => z.id === vps.zoneId) && (
+                            <option value={vps.zoneId}>{vps.zoneName || vps.zoneId}</option>
+                          )}
+                          {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+                        </Select>
+                        <Button type="button" onClick={() => {
+                          void run(async () => setZones(await call("zones")));
+                        }}>读取 Zone</Button>
+                      </div>
+                    </Field>
+                  )}
                   <Field label="接入方式">
                     <Select
                       value={service.access}
