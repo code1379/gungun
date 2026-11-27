@@ -1,5 +1,12 @@
 import { useApp } from "../api";
 import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = value / 1024, index = 0;
+  while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
+}
 const labels = {
   queued: "排队中",
   running: "执行中",
@@ -47,6 +54,15 @@ export default function Tasks() {
                     <span className="step-dot" />
                     <div>
                       <span>{step.name}</span>
+                      {step.transfer && (
+                        <div className="task-transfer">
+                          <div className="task-transfer-meta">
+                            <span>{formatBytes(step.transfer.transferred)} / {formatBytes(step.transfer.total)}</span>
+                            <strong>{step.transfer.percent}%</strong>
+                          </div>
+                          <Progress value={step.transfer.percent} max={100} aria-label="文件上传进度" />
+                        </div>
+                      )}
                       {step.message && (
                         <p className="error-text">{step.message}</p>
                       )}
