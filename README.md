@@ -6,15 +6,15 @@ macOS VPS 与代理节点管理端，以及 Linux 远程管理程序 fq。Electr
 
 ## 开发
 
-需要 Node.js 24、pnpm 11.25.0。**不要求预先安装 Go**：首次准备时会将 Go 1.25.4 下载到项目私有的 `.tools/go` 目录，使用 Go 官方下载元数据校验 SHA256，再交叉编译 Linux amd64 / arm64 的 fq；不会修改 macOS 全局环境。
+需要 Node.js 24、pnpm 12.23.0。**不要求预先安装 Go**：首次准备时会将 Go 1.25.4 下载到项目私有的 `.tools/go` 目录，使用 Go 官方下载元数据校验 SHA256，再交叉编译 Linux amd64 / arm64 的 fq；不会修改 macOS 全局环境。
 
 ```sh
-pnpm install --frozen-lockfile
+pnpm setup:install
 pnpm prepare:dev
 pnpm dev
 ```
 
-`pnpm prepare:dev` 面向 macOS Apple Silicon，自动准备项目私有 Go、构建 Linux 双架构 fq，并下载及校验 macOS arm64 sing-box。修改 fq 源码后运行 `pnpm fq:build`；`pnpm test:go` 也会自动使用项目内 Go 工具链。
+`pnpm setup:install` 会自动读取 HTTP_PROXY / HTTPS_PROXY 并传递给 Electron 下载器；`pnpm prepare:dev` 的 Go 与 sing-box 下载同样支持代理、进度显示和失败重试。`pnpm prepare:dev` 面向 macOS Apple Silicon，自动准备项目私有 Go、构建 Linux 双架构 fq，并下载及校验 macOS arm64 sing-box。修改 fq 源码后运行 `pnpm fq:build`；`pnpm test:go` 也会自动使用项目内 Go 工具链。
 
 ```sh
 pnpm lint
