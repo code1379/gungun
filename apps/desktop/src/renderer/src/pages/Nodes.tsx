@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { randomUUID } from "../utils";
 import { Plus, MoreHorizontal, ArrowUp, ArrowDown, Download, Upload, RefreshCw, Gauge, Activity, Workflow, Search, Pencil, Trash2, Layers, Tag as TagIcon, Rss, Server } from "lucide-react";
 import { nodeSchema, resolveTag, type Chain, type ProxyNode, type Tag, type TestResult } from "@gungun/domain";
@@ -31,6 +31,28 @@ export default function Nodes() {
   const [optimizing, setOptimizing] = useState<ProxyNode | null>(null);
   const [addresses, setAddresses] = useState("");
   const [optTask, setOptTask] = useState("");
+
+  useEffect(() => {
+    if (!menu) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".context-menu")
+      )
+        return;
+      setMenu(null);
+    };
+    const dismissEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("pointerdown", dismissOutside);
+    window.addEventListener("keydown", dismissEscape);
+    return () => {
+      window.removeEventListener("pointerdown", dismissOutside);
+      window.removeEventListener("keydown", dismissEscape);
+    };
+  }, [menu]);
+
   if (!data) return null;
   const isChain = tagId === "chains";
   let nodes: ProxyNode[] = [];
@@ -463,13 +485,11 @@ export default function Nodes() {
         </Empty>
       )}
       {menu && (
-        <>
-          <div className="menu-dismiss" onClick={() => setMenu(null)} />
-          <div
-            className="context-menu"
-            role="menu"
-            style={{ left: menu.x, top: menu.y }}
-          >
+        <div
+          className="context-menu"
+          role="menu"
+          style={{ left: menu.x, top: menu.y }}
+        >
             <button
               onClick={() => {
                 setDetails(menu.id);
@@ -527,8 +547,7 @@ export default function Nodes() {
             >
               删除…
             </button>
-          </div>
-        </>
+        </div>
       )}
       <Modal
         open={!!chain}

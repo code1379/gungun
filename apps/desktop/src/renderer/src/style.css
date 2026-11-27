@@ -1110,9 +1110,14 @@
     padding: 6px;
   }
   .table-wrap {
+    max-height: min(70vh, 680px);
     border: 1px solid var(--border);
     border-radius: 7px;
     overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .table-wrap > [data-slot="table-container"] {
+    overflow: visible;
   }
   .node-table {
     width: 100%;
@@ -1121,6 +1126,9 @@
     font-size: 12px;
   }
   .node-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     font-weight: 400;
     font-size: 11px;
     color: var(--muted-foreground);
@@ -1159,11 +1167,6 @@
   .latency {
     color: var(--good);
     font-variant-numeric: tabular-nums;
-  }
-  .menu-dismiss {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
   }
   .context-menu {
     position: fixed;
