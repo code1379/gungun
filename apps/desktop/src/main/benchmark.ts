@@ -20,6 +20,22 @@ export interface Measurement {
   speedMBps: number | null;
   error: null;
 }
+
+export function parseCurlLatencySamples(output: string): number[] {
+  return output
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(
+      ([status, seconds]) =>
+        Number.isFinite(status) &&
+        status >= 200 &&
+        status < 400 &&
+        Number.isFinite(seconds) &&
+        seconds > 0,
+    )
+    .map(([, seconds]) => seconds * 1000);
+}
 async function freePort() {
   const s = net.createServer();
   await new Promise<void>((r, e) =>
@@ -120,19 +136,7 @@ export class Benchmark {
           },
         },
       );
-      const latencySamples = latencyOutput
-        .trim()
-        .split(/\r?\n/)
-        .map((line) => line.trim().split(/\\s+/).map(Number))
-        .filter(
-          ([status, seconds]) =>
-            Number.isFinite(status) &&
-            status >= 200 &&
-            status < 400 &&
-            Number.isFinite(seconds) &&
-            seconds > 0,
-        )
-        .map(([, seconds]) => seconds * 1000);
+      const latencySamples = parseCurlLatencySamples(latencyOutput);
       if (!latencySamples.length)
         throw new Error(`延迟测试未获得有效 HTTP 响应：${latencyOutput.trim() || "无响应"}`);
       const latencyMs = Math.min(...latencySamples);
@@ -172,6 +176,9 @@ export class Benchmark {
               HTTP_PROXY: "",
               HTTPS_PROXY: "",
               ALL_PROXY: "",
+              http_proxy: "",
+              https_proxy: "",
+              all_proxy: "",
             },
           },
         );
