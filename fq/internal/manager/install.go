@@ -476,7 +476,7 @@ func (m *Manager) InstallCore(name string) (M, error) {
 func (m *Manager) InstallUnits() error { return m.InstallServices() }
 
 func (m *Manager) UpdateSelf(version string) (M, error) {
-	if !strings.HasPrefix(version, "v") || strings.ContainsAny(version, "/\ ") {
+	if !strings.HasPrefix(version, "v") || strings.ContainsAny(version, "/\\ ") {
 		return nil, errors.New("explicit release version required")
 	}
 	name := "fq-linux-" + runtime.GOARCH
