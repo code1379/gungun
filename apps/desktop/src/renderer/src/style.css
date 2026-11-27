@@ -1254,9 +1254,9 @@
     margin-bottom: 12px;
     overflow: hidden;
   }
-  .task-card-layout { display: flex; align-items: flex-start; gap: 8px; }
-  .task-card-disclosure { min-width: 0; flex: 1; }
-  .task-card-actions { flex-shrink: 0; padding: 14px 16px 0 0; }
+  .task-card-layout { display: block; }
+  .task-card-disclosure { min-width: 0; }
+  .task-card-actions { display: flex; align-items: center; flex-shrink: 0; padding: 0; }
   .task-step-fallback-message {
     margin-top: 6px;
     color: var(--warning, #b7791f);
@@ -1267,14 +1267,23 @@
   .step-cancelled .step-dot { background: var(--muted-foreground); }
   .task-card-summary {
     display: block;
-    list-style: none;
-    cursor: pointer;
     padding: 16px 18px;
-    outline: none;
   }
-  .task-card-summary::-webkit-details-marker { display: none; }
-  .task-card-summary:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--ring);
+  .task-summary-title-toggle {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .task-summary-title-toggle:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 4px;
   }
   .task-summary-main {
     display: flex;
@@ -1303,19 +1312,25 @@
   .task-summary-meta {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     flex-shrink: 0;
   }
+  .task-cancel-button { color: var(--danger); }
   .task-expand-label {
     display: inline-flex;
     align-items: center;
     gap: 5px;
+    padding: 4px 2px;
+    border: 0;
+    background: transparent;
     color: var(--muted-foreground);
     font-size: 11px;
     white-space: nowrap;
+    cursor: pointer;
   }
+  .task-expand-label:hover { color: var(--foreground); }
   .task-expand-label svg { transition: transform 150ms ease; }
-  .task-card[open] .task-expand-label svg { transform: rotate(180deg); }
+  .task-card-disclosure.expanded .task-expand-label svg { transform: rotate(180deg); }
   .task-card-summary > progress {
     margin: 12px 0 0;
   }

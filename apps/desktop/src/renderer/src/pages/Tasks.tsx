@@ -43,30 +43,32 @@ export default function Tasks() {
             return (
               <section className="task-card" key={task.id}>
                 <div className="task-card-layout">
-                  <details
-                    className="task-card-disclosure"
-                    onToggle={(event) => {
-                      const open = event.currentTarget.open;
-                      setExpandedTasks((current) =>
-                        current[task.id] === open
-                          ? current
-                          : { ...current, [task.id]: open },
-                      );
-                    }}
-                  >
-                    <summary className="task-card-summary">
+                  <div className={`task-card-disclosure${expanded ? " expanded" : ""}`}>
+                    <div className="task-card-summary">
                       <div className="task-summary-main">
-                        <div className="task-summary-title">
-                          <h2>{task.type}</h2>
-                          <p>
-                            {data.vps.find((vps) => vps.id === task.vpsId)?.name || "本机任务"}
-                            {" · "}
-                            {new Date(task.createdAt).toLocaleString()}
-                          </p>
-                          {task.summary && (
-                            <p className="task-summary-description">{task.summary}</p>
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          className="task-summary-title-toggle"
+                          aria-expanded={expanded}
+                          onClick={() =>
+                            setExpandedTasks((current) => ({
+                              ...current,
+                              [task.id]: !expanded,
+                            }))
+                          }
+                        >
+                          <div className="task-summary-title">
+                            <h2>{task.type}</h2>
+                            <p>
+                              {data.vps.find((vps) => vps.id === task.vpsId)?.name || "本机任务"}
+                              {" · "}
+                              {new Date(task.createdAt).toLocaleString()}
+                            </p>
+                            {task.summary && (
+                              <p className="task-summary-description">{task.summary}</p>
+                            )}
+                          </div>
+                        </button>
                         <div className="task-summary-meta">
                           <Badge
                             tone={
@@ -79,10 +81,43 @@ export default function Tasks() {
                           >
                             {labels[task.state]}
                           </Badge>
-                          <span className="task-expand-label">
+                          {cancellable && (
+                            <div className="task-card-actions">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="task-cancel-button"
+                                disabled={task.state === "cancelling"}
+                                onClick={() => {
+                                  void run(
+                                    () => call("cancelTask", { id: task.id }),
+                                    task.state === "queued" ? "任务已取消" : "已发送中断请求",
+                                  );
+                                }}
+                              >
+                                <XCircle size={14} />
+                                {task.state === "queued"
+                                  ? "取消任务"
+                                  : task.state === "cancelling"
+                                    ? "正在中断…"
+                                    : "中断任务"}
+                              </Button>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="task-expand-label"
+                            aria-expanded={expanded}
+                            onClick={() =>
+                              setExpandedTasks((current) => ({
+                                ...current,
+                                [task.id]: !expanded,
+                              }))
+                            }
+                          >
                             执行详情
                             <ChevronDown size={15} />
-                          </span>
+                          </button>
                         </div>
                       </div>
                       {!expanded && ["queued", "running", "cancelling"].includes(task.state) && (
@@ -92,73 +127,49 @@ export default function Tasks() {
                           aria-label="任务进度"
                         />
                       )}
-                    </summary>
-                    <div className="task-card-details">
-                      {expanded && (
-                        <>
-                          <div className="task-progress-meta">
-                            <span>执行进度</span>
-                            <strong>{task.progress}%</strong>
-                          </div>
-                          <Progress value={task.progress} max={100} aria-label="任务进度" />
-                        </>
-                      )}
-                      <div className="task-steps">
-                        {task.steps.map((step, index) => (
-                          <div key={index} className={`task-step step-${step.state}`}>
-                            <span className="step-dot" />
-                            <div>
-                              <span>{step.name}</span>
-                              {step.transfer && (
-                                <div className="task-transfer">
-                                  <div className="task-transfer-meta">
-                                    <span>
-                                      {formatBytes(step.transfer.transferred)} /{" "}
-                                      {formatBytes(step.transfer.total)}
-                                    </span>
-                                    <strong>{step.transfer.percent}%</strong>
+                    </div>
+                    {expanded && (
+                      <div className="task-card-details">
+                        <div className="task-progress-meta">
+                          <span>执行进度</span>
+                          <strong>{task.progress}%</strong>
+                        </div>
+                        <Progress value={task.progress} max={100} aria-label="任务进度" />
+                        <div className="task-steps">
+                          {task.steps.map((step, index) => (
+                            <div key={index} className={`task-step step-${step.state}`}>
+                              <span className="step-dot" />
+                              <div>
+                                <span>{step.name}</span>
+                                {step.transfer && (
+                                  <div className="task-transfer">
+                                    <div className="task-transfer-meta">
+                                      <span>
+                                        {formatBytes(step.transfer.transferred)} /{" "}
+                                        {formatBytes(step.transfer.total)}
+                                      </span>
+                                      <strong>{step.transfer.percent}%</strong>
+                                    </div>
+                                    <Progress
+                                      value={step.transfer.percent}
+                                      max={100}
+                                      aria-label="文件传输进度"
+                                    />
                                   </div>
-                                  <Progress
-                                    value={step.transfer.percent}
-                                    max={100}
-                                    aria-label="文件传输进度"
-                                  />
-                                </div>
-                              )}
-                              {step.message && (
-                                <p className={step.state === "fallback" ? "task-step-fallback-message" : "error-text"}>
-                                  {step.message}
-                                </p>
-                              )}
+                                )}
+                                {step.message && (
+                                  <p className={step.state === "fallback" ? "task-step-fallback-message" : "error-text"}>
+                                    {step.message}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                        {task.error && <ErrorView error={task.error} />}
                       </div>
-                      {task.error && <ErrorView error={task.error} />}
-                    </div>
-                  </details>
-                  {cancellable && (
-                    <div className="task-card-actions">
-                      <Button
-                        size="sm"
-                        variant={task.state === "queued" ? "secondary" : "danger"}
-                        disabled={task.state === "cancelling"}
-                        onClick={() => {
-                          void run(
-                            () => call("cancelTask", { id: task.id }),
-                            task.state === "queued" ? "任务已取消" : "已发送中断请求",
-                          );
-                        }}
-                      >
-                        <XCircle size={14} />
-                        {task.state === "queued"
-                          ? "取消任务"
-                          : task.state === "cancelling"
-                            ? "正在中断…"
-                            : "中断任务"}
-                      </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </section>
             );
