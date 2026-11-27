@@ -408,7 +408,10 @@ export default function Vps() {
             }}
           >
             <div className="form-grid">
-              <Field label="名称">
+              <Field
+                label="名称"
+                hint="建议使用简短英文名称，并作为 SSH Host 别名，例如 hk、hk02、jp。重复名称会在生成配置时自动追加编号。"
+              >
                 <Input
                   required
                   value={editing.name}

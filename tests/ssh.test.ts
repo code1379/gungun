@@ -8,7 +8,12 @@ import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import net from "node:net";
 import { Store } from "../apps/desktop/src/main/store";
-import { SSH } from "../apps/desktop/src/main/ssh";
+import {
+  SSH,
+  createSSHConfig,
+  createSSHHostAliases,
+  normalizeSSHHostAlias,
+} from "../apps/desktop/src/main/ssh";
 import { vpsSchema, type VPS } from "../packages/domain/src/index";
 let store: Store,
   ssh: SSH,
@@ -109,6 +114,38 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 describe("真实 SSH 握手与跳板通道", () => {
+  it("使用 VPS 名称生成 SSH Host 别名，并让跳板引用同一别名", () => {
+    const hk = { ...jumpVps, name: "hk", jumpId: null };
+    const hk02 = { ...target, id: randomUUID(), name: "hk02", jumpId: null };
+    const jp = { ...target, id: randomUUID(), name: "jp", jumpId: hk.id };
+    const { config, aliases } = createSSHConfig(
+      [hk, hk02, jp],
+      join(root, "id_ed25519_gungun"),
+    );
+
+    expect(aliases.get(hk.id)).toBe("hk");
+    expect(aliases.get(hk02.id)).toBe("hk02");
+    expect(aliases.get(jp.id)).toBe("jp");
+    expect(config).toContain("Host hk");
+    expect(config).toContain("Host hk02");
+    expect(config).toContain("Host jp");
+    expect(config).toContain("ProxyJump hk");
+    expect(config).not.toContain("gungun-");
+  });
+
+  it("重复名称自动编号，并避开已经使用的名称", () => {
+    const hk = { ...jumpVps, name: "hk", jumpId: null };
+    const duplicateHk = { ...target, id: randomUUID(), name: "hk", jumpId: null };
+    const hk02 = { ...target, id: randomUUID(), name: "hk02", jumpId: null };
+    const aliases = createSSHHostAliases([hk, duplicateHk, hk02]);
+
+    expect(aliases.get(hk.id)).toBe("hk");
+    expect(aliases.get(duplicateHk.id)).toBe("hk03");
+    expect(aliases.get(hk02.id)).toBe("hk02");
+    expect(normalizeSSHHostAlias("JP / Tokyo")).toBe("jp-tokyo");
+    expect(normalizeSSHHostAlias("香港")).toBe("vps");
+  });
+
   it("生成默认 Ed25519 密钥并拒绝覆盖已有密钥", async () => {
     const keyPath = join(root, "id_ed25519_gungun");
     expect((await ssh.keyStatus(keyPath)).exists).toBe(false);
