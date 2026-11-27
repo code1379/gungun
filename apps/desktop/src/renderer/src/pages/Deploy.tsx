@@ -89,7 +89,6 @@ export default function Deploy() {
         setAccessModes(selections.accessModes);
         setCustomDomains(selections.customDomains);
         setPortAssignments(selections.portAssignments);
-        setPortAssignments(selections.portAssignments);
       })
       .catch((error) => {
         const message = String(error);
@@ -130,6 +129,7 @@ export default function Deploy() {
         if (selections.protocols.length) setSelectedProtocols(selections.protocols);
         setAccessModes(selections.accessModes);
         setCustomDomains(selections.customDomains);
+        setPortAssignments(selections.portAssignments);
       } catch (error) {
         const message = String(error);
         if (/\/usr\/local\/bin\/fq: not found|fq: not found/.test(message)) {
