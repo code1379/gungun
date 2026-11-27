@@ -139,8 +139,8 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	}
 	result := M{"latencyMs": latencyMs, "speedMBps": nil, "error": nil}
 	if r.Speed {
-		start = time.Now()
-		res, e = client.Get(r.DownloadURL)
+		start := time.Now()
+		res, e := client.Get(r.DownloadURL)
 		if e != nil {
 			return nil, e
 		}
