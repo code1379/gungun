@@ -105,6 +105,22 @@ describe("Cloudflare API 与补偿", () => {
       await service.close();
     }
   });
+  it("相同 Edge 与公网端口时可清理旧的 Gungun Origin Rule", async () => {
+    const calls: { method: string; url: string; body: Record<string, unknown> }[] = [];
+    const oldRule = { ref: "gungun_cdn_example_com", expression: '(http.host eq "cdn.example.com")', action: "route" };
+    const service = await server((req, body, res) => {
+      calls.push({ method: req.method!, url: req.url || "", body });
+      if (req.method === "GET") reply(res, [{ id: "ruleset", rules: [oldRule, { ref: "other", action: "route" }] }]);
+      else reply(res, { id: "ruleset" });
+    });
+    try {
+      const cf = new Cloudflare({ cloudflareEmail: "x", cloudflareKey: "x" }, service.url);
+      const undo = await cf.removeOriginRule("zone", "cdn.example.com");
+      expect(calls[1].body.rules).toEqual([{ ref: "other", action: "route" }]);
+      await undo();
+      expect(calls[2].body.rules).toHaveLength(2);
+    } finally { await service.close(); }
+  });
   it("API 错误不假装成功", async () => {
     const service = await server((_req, _body, res) => reply(res, null, 403));
     try {
