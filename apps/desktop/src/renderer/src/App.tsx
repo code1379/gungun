@@ -112,7 +112,7 @@ export default function App() {
         <div className="page-content flex-1 overflow-auto px-7 py-7">
           {page === "dashboard" && <Dashboard navigate={setPage} />}
           {page === "vps" && <Vps />}
-          {page === "deploy" && <Deploy />}
+          <div hidden={page !== "deploy"}><Deploy /></div>
           {page === "network" && <Network />}
           {page === "nodes" && <Nodes />}
           {page === "tasks" && <Tasks />}

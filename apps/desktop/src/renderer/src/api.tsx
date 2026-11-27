@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -43,6 +44,7 @@ export function Provider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const previousTaskStates = useRef<Record<string, string>>({});
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -77,6 +79,26 @@ export function Provider({ children }: { children: ReactNode }) {
     },
     [refresh],
   );
+  useEffect(() => {
+    if (!data) return;
+    const next: Record<string, string> = {};
+    for (const task of data.tasks) {
+      const previous = previousTaskStates.current[task.id];
+      const finished = ["success", "failed", "interrupted"].includes(task.state);
+      if (previous && ["queued", "running"].includes(previous) && finished) {
+        if (task.state === "failed" || task.state === "interrupted") {
+          setMessage("");
+          setError(`${task.type}${task.state === "failed" ? "失败" : "已中断"}：${(task.error || "任务未能完成").slice(-1200)}`);
+        } else {
+          setError("");
+          setMessage(`${task.type} 已完成`);
+        }
+      }
+      next[task.id] = task.state;
+    }
+    previousTaskStates.current = next;
+  }, [data?.tasks]);
+
   useEffect(() => {
     void run(refresh);
     return window.gungun?.changed(() => {

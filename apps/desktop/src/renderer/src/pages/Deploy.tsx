@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rocket, Server, Shield, Network, LoaderCircle, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { RemoteState, Service, VPS } from "@gungun/domain";
 import { useApp } from "../api";
@@ -31,6 +31,8 @@ export default function Deploy() {
   const [remoteStatus, setRemoteStatus] = useState<"idle" | "loading" | "ready" | "missing-fq" | "error">("idle");
   const [remoteError, setRemoteError] = useState("");
   const [installingFq, setInstallingFq] = useState(false);
+  const [installTaskId, setInstallTaskId] = useState<string | null>(null);
+  const [bindingZone, setBindingZone] = useState(false);
   const [deploying, setDeploying] = useState(false);
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
@@ -84,6 +86,50 @@ export default function Deploy() {
       throw error;
     }
   };
+  const bindSelectedZone = () => {
+    if (!vps || !selectedZone) return;
+    void run(async () => {
+      setBindingZone(true);
+      try {
+        await call("saveVps", {
+          ...vps,
+          zoneId: selectedZone.id,
+          zoneName: selectedZone.name,
+          accountId: selectedZone.account.id,
+        });
+        setZoneStatus("success");
+        setZoneMessage(`已绑定到此 VPS：${selectedZone.name}`);
+      } finally {
+        setBindingZone(false);
+      }
+    }, "Cloudflare Zone 已绑定到 VPS");
+  };
+
+  useEffect(() => {
+    if (!data || !installTaskId) return;
+    const task = data.tasks.find((item) => item.id === installTaskId);
+    if (!task || ["queued", "running"].includes(task.state)) return;
+    setInstallingFq(false);
+    setInstallTaskId(null);
+    if (task.state !== "success" || task.vpsId !== vpsId) return;
+    setRemote(null);
+    setRemoteError("");
+    setRemoteStatus("loading");
+    void call<RemoteState>("remoteRead", { vpsId, action: "config" })
+      .then((state) => {
+        setRemote(state);
+        setRemoteStatus("ready");
+      })
+      .catch((error) => {
+        const message = String(error);
+        if (/\\/usr\\/local\\/bin\\/fq: not found|fq: not found/.test(message)) {
+          setRemoteStatus("missing-fq");
+          return;
+        }
+        setRemoteError(message);
+        setRemoteStatus("error");
+      });
+  }, [data?.tasks, installTaskId, vpsId, call]);
   return (
     <>
       <PageHeader
@@ -114,6 +160,52 @@ export default function Deploy() {
             </div>
           </aside>
           <section className="deploy-form">
+            {vps && (
+              <section className="zone-binding-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>域名与 Cloudflare</h2>
+                    <p>在这里为这台 VPS 绑定域名区域；不依赖 fq 是否安装。</p>
+                  </div>
+                  <Badge tone={vps.zoneId ? "good" : "neutral"}>
+                    {vps.zoneId ? "已绑定" : "尚未绑定"}
+                  </Badge>
+                </div>
+                <div className="zone-binding-controls">
+                  <Select value={zoneId} onValueChange={(value) => {
+                    setZoneId(value);
+                    const zone = zones.find((item) => item.id === value);
+                    setZoneStatus(value ? "success" : "idle");
+                    setZoneMessage(zone ? `已选择：${zone.name}，点击「绑定到 VPS」保存` : "");
+                  }}>
+                    <option value="">选择 Cloudflare Zone</option>
+                    {vps.zoneId && !zones.some((zone) => zone.id === vps.zoneId) && (
+                      <option value={vps.zoneId}>{vps.zoneName || vps.zoneId}</option>
+                    )}
+                    {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+                  </Select>
+                  <Button type="button" loading={zoneStatus === "loading"} disabled={zoneStatus === "loading"} onClick={() => {
+                    void run(readZones, "Cloudflare Zone 读取成功");
+                  }}>
+                    <RefreshCw size={14} />
+                    读取 Zone
+                  </Button>
+                  <Button type="button" variant="default" loading={bindingZone} disabled={!selectedZone || bindingZone} onClick={bindSelectedZone}>
+                    绑定到 VPS
+                  </Button>
+                </div>
+                <p className="zone-binding-meta">
+                  独立域名空间：<code>{vps.namespace}</code>
+                  {vps.zoneName ? <span>当前域名区域：{vps.zoneName}</span> : <span>绑定后可自动生成 node.{vps.namespace}.域名</span>}
+                </p>
+                {zoneStatus !== "idle" && (
+                  <div className={`zone-read-status ${zoneStatus}`}>
+                    {zoneStatus === "loading" ? <LoaderCircle className="animate-spin" size={13} /> : zoneStatus === "error" ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+                    <span>{zoneMessage}</span>
+                  </div>
+                )}
+              </section>
+            )}
             {vps && remoteStatus === "missing-fq" ? (
               <Empty
                 title="这台 VPS 尚未安装 fq"
@@ -124,12 +216,9 @@ export default function Deploy() {
                       disabled={installingFq}
                       onClick={() => {
                         void run(async () => {
+                          const taskId = await call<string>("installFq", vps.id);
+                          setInstallTaskId(taskId);
                           setInstallingFq(true);
-                          try {
-                            await call("installFq", vps.id);
-                          } finally {
-                            setInstallingFq(false);
-                          }
                         }, "fq 安装任务已加入任务中心");
                       }}
                     >
@@ -161,18 +250,16 @@ export default function Deploy() {
                   void run(async () => {
                     setDeploying(true);
                     try {
-                    if (service.protocol !== "vless-reality") {
-                      const selectedZone = zones.find((zone) => zone.id === zoneId);
-                      if (!vps.zoneName && !selectedZone)
-                        throw new Error("请先读取并选择 Cloudflare Zone，再部署需要域名的协议");
-                      if (selectedZone) {
-                        await call("saveVps", {
-                          ...vps,
-                          zoneId: selectedZone.id,
-                          zoneName: selectedZone.name,
-                          accountId: selectedZone.account.id,
-                        });
-                      }
+                    const needsZone = service.access !== "direct" || !!service.domain.trim();
+                    if (needsZone && !vps.zoneName && !selectedZone)
+                      throw new Error("当前接入方式需要域名，请先在上方绑定 Cloudflare Zone");
+                    if (selectedZone && selectedZone.id !== vps.zoneId) {
+                      await call("saveVps", {
+                        ...vps,
+                        zoneId: selectedZone.id,
+                        zoneName: selectedZone.name,
+                        accountId: selectedZone.account.id,
+                      });
                     }
                     await call("deploy", { vpsId: vps.id, service });
                     } finally {
@@ -214,51 +301,7 @@ export default function Deploy() {
                   ))}
                 </div>
                 <div className="form-grid">
-                  {service.protocol !== "vless-reality" && (
-                    <Field
-                      label="Cloudflare Zone"
-                      hint={activeZoneName ? `当前选择：${activeZoneName}。部署后会绑定到这台 VPS。` : "首次部署时在这里选择 Cloudflare Zone；选择后会保存到这台 VPS。"}
-                      help={{
-                        title: "选择 Cloudflare Zone",
-                        description: "Zone 是 Cloudflare 托管的域名区域，例如 example.com。Gungun 使用设置中保存的 Global API Key 读取可用 Zone，并在部署时创建 DNS、证书挑战和 Tunnel 配置。",
-                        steps: [
-                          "先在「设置 → Cloudflare」填写账号邮箱与 Global API Key。",
-                          "点击「读取 Zone」加载当前账号有权管理的域名。",
-                          "在部署中心选择准备给这台 VPS 使用的域名区域；不需要在 VPS 设置中另行配置。",
-                          "Gungun 会把 Zone 绑定到这台 VPS，并使用自动生成的独立域名空间。",
-                        ],
-                        url: "https://dash.cloudflare.com/",
-                        linkLabel: "打开 Cloudflare 控制台",
-                      }}
-                    >
-                      <div className="input-action">
-                        <Select value={zoneId} onValueChange={(value) => {
-                          setZoneId(value);
-                          const zone = zones.find((item) => item.id === value);
-                          setZoneStatus(value ? "success" : "idle");
-                          setZoneMessage(zone ? `已选择：${zone.name}` : "");
-                        }}>
-                          <option value="">选择 Cloudflare Zone</option>
-                          {vps.zoneId && !zones.some((z) => z.id === vps.zoneId) && (
-                            <option value={vps.zoneId}>{vps.zoneName || vps.zoneId}</option>
-                          )}
-                          {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
-                        </Select>
-                        <Button type="button" disabled={zoneStatus === "loading"} onClick={() => {
-                          void run(readZones, "Cloudflare Zone 读取成功");
-                        }}>
-                          {zoneStatus === "loading" ? <LoaderCircle className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-                          读取 Zone
-                        </Button>
-                      </div>
-                      {zoneStatus !== "idle" && (
-                        <div className={`zone-read-status ${zoneStatus}`}>
-                          {zoneStatus === "loading" ? <LoaderCircle className="animate-spin" size={13} /> : zoneStatus === "error" ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
-                          <span>{zoneMessage}</span>
-                        </div>
-                      )}
-                    </Field>
-                  )}
+
                   <Field label="接入方式">
                     <Select
                       value={service.access}

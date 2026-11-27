@@ -1,7 +1,7 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { useState } from "react";
 import { randomUUID } from "../utils";
-import { Plus, MoreHorizontal, ArrowUp, ArrowDown, Download, Upload, RefreshCw, Gauge, Activity, Workflow, Search, Pencil, Trash2, Layers, Tag, Rss, Server } from "lucide-react";
+import { Plus, MoreHorizontal, ArrowUp, ArrowDown, Download, Upload, RefreshCw, Gauge, Activity, Workflow, Search, Pencil, Trash2, Layers, Tag as TagIcon, Rss, Server } from "lucide-react";
 import { nodeSchema, resolveTag, type Chain, type ProxyNode, type Tag, type TestResult } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, protocolLabels, Checkbox, Select, Input, Table, TableHeader, TableRow, TableHead, TableBody, TableCell, Textarea } from "../components/ui";
@@ -148,7 +148,7 @@ export default function Nodes() {
                   data.tags.find((tag) => tag.id === t.id)?.kind === "subscription" ? <Rss size={15} /> :
                     data.tags.find((tag) => tag.id === t.id)?.kind === "aggregate" ? <Layers size={15} /> :
                       data.tags.find((tag) => tag.id === t.id)?.kind === "vps" ? <Server size={15} /> :
-                        <Tag size={15} />}
+                        <TagIcon size={15} />}
             </span>
             <span className="node-group-name">{t.name}</span>
             <small className="node-group-count">
