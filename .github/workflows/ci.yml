@@ -44,16 +44,7 @@ jobs:
       - run: pnpm fq:build
       - name: Real systemd deployment, Caddy and rollback
         run: node tests/systemd-integration.mjs
-      - run: pnpm build
-      - uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
-        with:
-          name: verification-report
-          retention-days: 1
-          path: test-results/
-          if-no-files-found: warn
-  macos:
+      - run: pnpm build  macos:
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -86,15 +77,4 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Mount DMG, install app into isolated directory and launch
         run: node scripts/verify-dmg.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        continue-on-error: true
-        with:
-          name: test-build-macos-arm64
-          retention-days: 1
-          path: |
-            release/*.dmg
-            resources/bin/fq-linux-*
-            test-results/
-          if-no-files-found: error
 
