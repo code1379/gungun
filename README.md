@@ -30,14 +30,15 @@ pnpm test:desktop
 
 ## 功能
 
-- 公网 / NAT VPS、SSH 私钥 / 密码、跳板机与 Tailscale 地址；独立 SSH config。
+- 公网 / NAT VPS、密码首次登录后安装 SSH 主密钥、跳板机与 Tailscale 地址；独立 SSH config。
 - fq 管理 sing-box 六协议，协议独立 DIRECT / WARP 出站；Caddy 网站反向代理。
-- Cloudflare Global API Key 留在 Mac，管理 Zone、DNS、CDN 回源端口与每 VPS 固定 Tunnel。
+- Cloudflare Global API Key 留在 Mac；部署时选择 Zone，管理 DNS、CDN 回源端口与每 VPS 固定 Tunnel。
 - VPS 保留证书私钥，Mac 处理 Let's Encrypt DNS-01、部署和续期。
 - VPS SSH 手动同步、外部订阅、手动节点、动态 Tag 聚合。
 - 按原节点 ID 引用的多跳链式代理、逐跳诊断、完整链路测速与 Mihomo 导出。
 - 当前 Tag 的多主机真实延迟 / 速度测试；优选 IP 只修改本机节点 Address。
 - 持久化任务、远程配置备份 / 预检查 / 应用 / 验证 / 失败回滚。
+- 字段级帮助、官方文档快捷入口与应用内帮助中心。
 
 ## 说明与验证
 
