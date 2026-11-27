@@ -85,8 +85,8 @@ export class API {
           publicAddress: "",
           sshPort: 22,
           username: "root",
-          auth: "key",
-          keyPath: s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH,
+          auth: "password",
+          keyPath: "",
           password: "",
           jumpId: null,
           tailscale: false,
@@ -188,6 +188,17 @@ export class API {
       case "sshTest": {
         const v = vpsSchema.parse(input);
         return this.ssh.test(v);
+      }
+      case "installSSHKey": {
+        const q = z.object({ vpsId: id }).parse(input);
+        const vps = s.get<VPS>("vps", q.vpsId);
+        if (vps.auth !== "password" || !vps.password)
+          throw new Error("安装主密钥需要先使用 SSH 密码认证连接此 VPS");
+        const keyPath = s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH;
+        const installed = await this.ssh.installPublicKey(vps, keyPath);
+        s.saveVps({ ...vps, auth: "key", keyPath: installed.path, password: "" });
+        this.notify();
+        return installed;
       }
       case "trustHost": {
         const q = z
