@@ -60,7 +60,82 @@ type State struct {
 	Certificate       *Certificate `json:"certificate,omitempty"`
 }
 
-var validID = regexp.MustCompile(`^[a-z0-9-]{1,50}$`)
+func serviceTransport(protocol string) string {
+	switch protocol {
+	case "hysteria2", "tuic":
+		return "udp"
+	default:
+		return "tcp"
+	}
+}
+
+func listenerKey(transport string, port int) string {
+	return fmt.Sprintf("%s:%d", transport, port)
+}
+
+var validID = regexp.MustCompile(`^[a-z0-9-]{1,50}package manager
+
+import (
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net"
+	"regexp"
+)
+
+type Service struct {
+	ID            string `json:"id"`
+	Protocol      string `json:"protocol"`
+	Port          int    `json:"port"`
+	PublicPort    int    `json:"publicPort"`
+	EdgePort      int    `json:"edgePort"`
+	Access        string `json:"access"`
+	Egress        string `json:"egress"`
+	Domain        string `json:"domain"`
+	Password      string `json:"password"`
+	UUID          string `json:"uuid"`
+	Path          string `json:"path"`
+	RealityServer string `json:"realityServer"`
+	RealityPort   int    `json:"realityPort"`
+}
+type Website struct {
+	ID          string `json:"id"`
+	Domain      string `json:"domain"`
+	Target      string `json:"target"`
+	TargetPort  int    `json:"targetPort"`
+	UpstreamTLS bool   `json:"upstreamTLS"`
+	Access      string `json:"access"`
+	Port        int    `json:"port"`
+	PublicPort  int    `json:"publicPort"`
+	EdgePort    int    `json:"edgePort"`
+}
+type Certificate struct {
+	NotAfter string   `json:"notAfter"`
+	Domain   string   `json:"domain"`
+	Domains  []string `json:"domains"`
+}
+type State struct {
+	SchemaVersion     int          `json:"schemaVersion"`
+	HostID            string       `json:"hostId"`
+	HostName          string       `json:"hostName,omitempty"`
+	Kind              string       `json:"kind"`
+	PublicAddress     string       `json:"publicAddress"`
+	Namespace         string       `json:"namespace"`
+	ZoneName          string       `json:"zoneName"`
+	Services          []Service    `json:"services"`
+	Websites          []Website    `json:"websites"`
+	DisableTunnel     bool         `json:"disableTunnel,omitempty"`
+	TunnelToken       string       `json:"tunnelToken,omitempty"`
+	RealityPrivateKey string       `json:"realityPrivateKey,omitempty"`
+	RealityPublicKey  string       `json:"realityPublicKey,omitempty"`
+	RealityShortID    string       `json:"realityShortId,omitempty"`
+	Certificate       *Certificate `json:"certificate,omitempty"`
+}
+
+)
 var validDomain = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 var validHost = regexp.MustCompile(`^[a-zA-Z0-9.:_-]{1,253}$`)
 
@@ -91,7 +166,7 @@ func (s *State) Normalize() error {
 	if s.Kind != "public" && s.Kind != "nat" {
 		return errors.New("kind must be public or nat")
 	}
-	used := map[int]string{}
+	used := map[string]string{}
 	ids := map[string]bool{}
 	for i := range s.Services {
 		v := &s.Services[i]
@@ -117,15 +192,16 @@ func (s *State) Normalize() error {
 			if s.Kind == "nat" {
 				return errors.New("NAT requires explicit internal port and public mapping")
 			}
-			v.Port = allocate(used)
+			v.Port = allocate(used, serviceTransport(v.Protocol))
 		}
 		if !ValidPort(v.Port) {
 			return errors.New("invalid listen port")
 		}
-		if used[v.Port] != "" {
-			return errors.New("listen port collision")
+		listenKey := listenerKey(serviceTransport(v.Protocol), v.Port)
+		if used[listenKey] != "" {
+			return fmt.Errorf("listen port collision: %s", listenKey)
 		}
-		used[v.Port] = v.ID
+		used[listenKey] = v.ID
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
 				if s.Kind == "nat" {
@@ -194,8 +270,9 @@ func (s *State) Normalize() error {
 		if !validHost.MatchString(w.Target) || !ValidPort(w.TargetPort) || !ValidPort(w.Port) || !ValidPort(w.PublicPort) {
 			return errors.New("invalid website endpoint")
 		}
-		if used[w.Port] != "" {
-			return errors.New("website/service port collision")
+		websiteListenKey := listenerKey("tcp", w.Port)
+		if used[websiteListenKey] != "" {
+			return errors.New("website/service TCP port collision")
 		}
 		if w.Access != "direct" && w.Access != "cdn" && w.Access != "argo" {
 			return errors.New("invalid website access")
@@ -224,21 +301,24 @@ func (s *State) Normalize() error {
 	}
 	return nil
 }
-func allocate(used map[int]string) int {
+func allocate(used map[string]string, transport string) int {
 	for p := 20000; p < 60000; p++ {
-		if used[p] != "" {
+		if used[listenerKey(transport, p)] != "" {
 			continue
 		}
-		tcp, e := net.Listen("tcp", fmt.Sprintf(":%d", p))
-		if e != nil {
+		if transport == "udp" {
+			packet, err := net.ListenPacket("udp", fmt.Sprintf(":%d", p))
+			if err != nil {
+				continue
+			}
+			_ = packet.Close()
+			return p
+		}
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		if err != nil {
 			continue
 		}
-		udp, e := net.ListenPacket("udp", fmt.Sprintf(":%d", p))
-		tcp.Close()
-		if e != nil {
-			continue
-		}
-		udp.Close()
+		_ = listener.Close()
 		return p
 	}
 	return 0
