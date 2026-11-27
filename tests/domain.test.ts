@@ -265,6 +265,10 @@ describe("能力与连接校验", () => {
     expect(serviceSchema.safeParse({ ...base, edgeScheme: "http", edgePort: 80 }).success).toBe(true);
     expect(serviceSchema.safeParse({ ...base, edgeScheme: "http", edgePort: 443 }).success).toBe(false);
     expect(serviceSchema.safeParse({ ...base, edgeScheme: "https", edgePort: 2053 }).success).toBe(true);
+    const httpDefault = serviceSchema.parse({ ...base, edgeScheme: "http", edgePort: 0 });
+    const httpsDefault = serviceSchema.parse({ ...base, edgeScheme: "https", edgePort: 0 });
+    expect(httpDefault.edgePort).toBe(80);
+    expect(httpsDefault.edgePort).toBe(443);
     expect(serviceSchema.safeParse({ ...base, edgeScheme: "https", edgePort: 8880 }).success).toBe(false);
   });
   it("检测 SSH 跳板机循环和缺失引用", () => {
