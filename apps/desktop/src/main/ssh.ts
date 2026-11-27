@@ -235,6 +235,25 @@ export class SSH {
       publicKey: publicExists ? publicKey.trim() : "",
     };
   }
+  async installPublicKey(vps: VPS, keyPath: string) {
+    const status = await this.keyStatus(keyPath);
+    if (!status.exists || !status.publicKey)
+      throw new Error("本机 SSH 密钥不完整，请先在设置中生成密钥");
+    const parts = status.publicKey.trim().split(/\s+/);
+    if (!parts[0] || !/^ssh-(ed25519|rsa)|^ecdsa-sha2-/.test(parts[0]) || parts.length < 2)
+      throw new Error("本机公钥格式无效");
+    const publicKey = parts.slice(0, 2).join(" ");
+    const line = shellQuote(publicKey);
+    const command =
+      "umask 077; mkdir -p ~/.ssh && chmod 700 ~/.ssh && " +
+      "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
+      "grep -Fqx -- " + line + " ~/.ssh/authorized_keys || " +
+      "printf '%s\n' " + line + " >> ~/.ssh/authorized_keys";
+    await this.run(vps, command, "", 30000);
+    const keyVps = { ...vps, auth: "key" as const, keyPath: status.path, password: "" };
+    await this.test(keyVps);
+    return { path: status.path, publicKey, verified: true };
+  }
   async generateKey(path: string) {
     const resolved = resolveSSHKeyPath(path || DEFAULT_SSH_KEY_PATH);
     await mkdir(dirname(resolved), { recursive: true, mode: 0o700 });

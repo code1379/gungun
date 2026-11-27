@@ -37,6 +37,11 @@ try {
       .click();
   };
   await page.emulateMedia({ reducedMotion: "reduce" });
+  const generatedKey = await page.evaluate(
+    (path) => window.gungun.invoke("generateKey", { path }),
+    join(dir, "gungun-test-key"),
+  );
+  if (!generatedKey.ok) throw new Error(generatedKey.error);
   await expect(
     page.getByRole("heading", { name: "主控制台", exact: true }),
   ).toBeVisible();
@@ -50,8 +55,7 @@ try {
   await choose("主机类型", /^NAT/);
   await page.getByLabel("服务器地址", { exact: true }).fill("127.0.0.1");
   await page.getByLabel("SSH 端口", { exact: true }).fill(String(ssh.port));
-  await choose("认证方式", "密码");
-  await page.getByLabel("密码", { exact: true }).fill(ssh.password);
+  await page.getByLabel("SSH 登录密码", { exact: true }).fill(ssh.password);
   await page.getByRole("checkbox", { name: "与服务器地址相同" }).uncheck();
   await page.getByPlaceholder("例如 NAT 映射公网 IP").fill("203.0.113.7");
   await page.getByRole("button", { name: "保存 VPS", exact: true }).click();
@@ -64,6 +68,20 @@ try {
     { address: `127.0.0.1:${ssh.port}`, fingerprint: ssh.fingerprint },
   );
   if (!trust.ok) throw new Error(trust.error);
+  await page.getByRole("button", { name: /Smoke NAT/ }).click();
+  await page.getByRole("button", { name: "安装 SSH 主密钥", exact: true }).click();
+  await expect(page.getByText("SSH 密钥认证已启用", { exact: true })).toBeVisible();
+  const installedPublicKey = generatedKey.value.publicKey
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ");
+  if (!ssh.authorizedKeys.split(/\r?\n/).includes(installedPublicKey))
+    throw new Error("The generated SSH public key was not written to remote authorized_keys");
+  await expect.poll(() => ssh.publicKeyLogins).toBeGreaterThan(0);
+  const afterKeyInstall = await page.evaluate(() => window.gungun.invoke("snapshot"));
+  if (!afterKeyInstall.ok || afterKeyInstall.value.vps[0].auth !== "key" || afterKeyInstall.value.vps[0].password)
+    throw new Error("Password-to-key onboarding did not complete");
   const opened = app.waitForEvent("window");
   const open = await page.evaluate(
     (id) => window.gungun.invoke("openWindow", { type: "terminal", id }),

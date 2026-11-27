@@ -3,7 +3,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { isIP } from "node:net";
-import { dialog } from "electron";
+import { dialog, shell } from "electron";
 import {
   chainSchema,
   exportBase64,
@@ -76,6 +76,31 @@ export class API {
     switch (operation) {
       case "snapshot":
         return s.snapshot();
+      case "openExternal": {
+        const url = z.string().url().max(2048).parse(input);
+        const parsed = new URL(url);
+        const allowed = [
+          "cloudflare.com",
+          "developers.cloudflare.com",
+          "letsencrypt.org",
+          "tailscale.com",
+          "openssh.com",
+          "nodejs.org",
+          "pnpm.io",
+          "github.com",
+          "go.dev",
+          "sing-box.sagernet.org",
+        ];
+        if (
+          parsed.protocol !== "https:" ||
+          parsed.username ||
+          parsed.password ||
+          !allowed.some((host) => parsed.hostname === host || parsed.hostname.endsWith("." + host))
+        )
+          throw new Error("仅允许打开受信任的官方 HTTPS 文档与控制台");
+        await shell.openExternal(parsed.toString());
+        return true;
+      }
       case "newVps":
         return {
           id: randomUUID(),
@@ -85,8 +110,8 @@ export class API {
           publicAddress: "",
           sshPort: 22,
           username: "root",
-          auth: "key",
-          keyPath: s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH,
+          auth: "password",
+          keyPath: "",
           password: "",
           jumpId: null,
           tailscale: false,
@@ -188,6 +213,17 @@ export class API {
       case "sshTest": {
         const v = vpsSchema.parse(input);
         return this.ssh.test(v);
+      }
+      case "installSSHKey": {
+        const q = z.object({ vpsId: id }).parse(input);
+        const vps = s.get<VPS>("vps", q.vpsId);
+        if (vps.auth !== "password" || !vps.password)
+          throw new Error("安装主密钥需要先使用 SSH 密码认证连接此 VPS");
+        const keyPath = s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH;
+        const installed = await this.ssh.installPublicKey(vps, keyPath);
+        s.saveVps({ ...vps, auth: "key", keyPath: installed.path, password: "" });
+        this.notify();
+        return installed;
       }
       case "trustHost": {
         const q = z

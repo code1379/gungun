@@ -86,7 +86,15 @@ export default function Settings() {
             不会发送到 VPS。
           </p>
           <div className="form-grid">
-            <Field label="Cloudflare 邮箱">
+            <Field
+              label="Cloudflare 邮箱"
+              help={{
+                title: "Cloudflare 账号邮箱",
+                description: "填写登录 Cloudflare 控制台时使用的账号邮箱。它会与 Global API Key 一起用于本机访问 Cloudflare API。",
+                url: "https://dash.cloudflare.com/",
+                linkLabel: "打开 Cloudflare 控制台",
+              }}
+            >
               <Input
                 type="email"
                 value={values.cloudflareEmail}
@@ -94,7 +102,22 @@ export default function Settings() {
                 onChange={(e) => update("cloudflareEmail", e.target.value)}
               />
             </Field>
-            <Field label="Global API Key">
+            <Field
+              label="Global API Key"
+              help={{
+                title: "如何获取 Global API Key",
+                description: "Global API Key 是 Cloudflare 账号级密钥。Gungun 当前使用它读取 Zone、管理 DNS、创建 Tunnel 和配置回源规则。密钥保存在本机，不会发送到 VPS。",
+                steps: [
+                  "登录 Cloudflare 控制台，点击右上角头像。",
+                  "打开 My Profile（个人资料）。",
+                  "进入 API Tokens 页面。",
+                  "在 Global API Key 一栏点击 View，完成身份验证后复制密钥。",
+                  "将密钥粘贴到这里，点击「保存并读取 Zone」验证。",
+                ],
+                url: "https://dash.cloudflare.com/profile/api-tokens",
+                linkLabel: "打开 API Tokens 页面",
+              }}
+            >
               <Input
                 type="password"
                 value={values.cloudflareKey}
@@ -175,7 +198,23 @@ export default function Settings() {
         </section>
         <section className="section settings-section">
           <h2>SSH 与 Tailscale</h2>
-          <Field label="默认 SSH 私钥" hint="Gungun 默认使用 Ed25519 密钥；首次使用时在这里生成。">
+          <Field
+            label="默认 SSH 私钥"
+            hint="Gungun 默认使用 Ed25519 密钥。首次添加 VPS 时使用密码登录，确认主机指纹后再到 VPS 详情安装此公钥。"
+            help={{
+              title: "Gungun SSH 主密钥",
+              description: "Gungun 使用一把本机主密钥管理多台 VPS。私钥只保存在这台 Mac；安装操作只会把 .pub 公钥追加到远程 authorized_keys。",
+              steps: [
+                "在这里生成默认 Ed25519 密钥，或选择已有密钥。",
+                "添加 VPS 时先使用 SSH 密码登录并核验主机指纹。",
+                "进入 VPS 详情，点击「安装 SSH 主密钥」。",
+                "Gungun 会实际测试密钥登录，成功后才切换认证方式。",
+                "轮换密钥时先安装并验证新公钥，再切换默认密钥；旧私钥不会自动删除。",
+              ],
+              url: "https://www.openssh.com/manual.html",
+              linkLabel: "查看 OpenSSH 文档",
+            }}
+          >
             <div className="input-action">
               <Input
                 value={sshKeyPath}
