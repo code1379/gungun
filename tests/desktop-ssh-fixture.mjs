@@ -8,7 +8,10 @@ export async function desktopSSHFixture(directory) {
   const require = createRequire(resolve("apps/desktop/package.json"));
   const { Server } = require("ssh2");
   const key = join(directory, "ssh-fixture-key");
+  const clientKey = join(directory, "ssh-client-key");
   execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-f", key, "-N", ""]);
+  execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-f", clientKey, "-N", ""]);
+  const clientPublicKey = readFileSync(clientKey + ".pub", "utf8").trim().split(" ");
   const publicKey = readFileSync(key + ".pub", "utf8").split(" ")[1];
   const fingerprint =
     "SHA256:" +
@@ -24,7 +27,10 @@ export async function desktopSSHFixture(directory) {
     client.on("error", () => {});
     client.on("close", () => clients.delete(client));
     client.on("authentication", (auth) =>
-      auth.method === "password" && auth.password === password
+      (auth.method === "password" && auth.password === password) ||
+      (auth.method === "publickey" &&
+        auth.key?.data &&
+        Buffer.from(auth.key.data).equals(Buffer.from(clientPublicKey[1], "base64")))
         ? auth.accept()
         : auth.reject(),
     );
@@ -51,6 +57,7 @@ export async function desktopSSHFixture(directory) {
   return {
     port: server.address().port,
     password,
+    clientKeyPath: clientKey,
     fingerprint,
     get shells() {
       return shells;
