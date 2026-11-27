@@ -969,6 +969,24 @@
   .common-settings-panel .section-heading p { margin-top: 4px; color: var(--muted-foreground); font-size: 11px; line-height: 1.55; }
   .protocol-settings-card .access-mode-panel { margin: 0 0 16px; padding: 13px; background: var(--background); }
   .protocol-settings-card .form-grid { margin-top: 12px; }
+  .port-override-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+  .port-override-option > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .port-override-option .field {
+    width: 100%;
+  }
   .protocol-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
