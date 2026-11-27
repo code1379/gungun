@@ -71,7 +71,7 @@ try {
   await page.getByRole("button", { name: /Smoke NAT/ }).click();
   await page.getByRole("button", { name: "安装 SSH 主密钥", exact: true }).click();
   await expect(page.getByText("SSH 密钥认证已启用", { exact: true })).toBeVisible();
-  const installedPublicKey = generatedKey.publicKey
+  const installedPublicKey = generatedKey.value.publicKey
     .trim()
     .split(/\\s+/)
     .slice(0, 2)
