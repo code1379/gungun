@@ -1289,6 +1289,27 @@
     margin-top: 6px;
     word-break: break-word;
   }
+  .task-transfer {
+    width: min(520px, 100%);
+    margin-top: 9px;
+  }
+  .task-transfer-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 5px;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .task-transfer-meta strong {
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .task-transfer progress {
+    margin: 0;
+    height: 5px;
+  }
   .step-dot {
     width: 7px;
     height: 7px;
