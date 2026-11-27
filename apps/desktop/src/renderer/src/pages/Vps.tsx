@@ -3,18 +3,55 @@ import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, Key
 import { VPS } from "@gungun/domain";
 import { errorText, useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, HelpTip, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
+
+type HostKeyChallenge = {
+  code: "HOST_KEY_UNKNOWN" | "HOST_KEY_CHANGED";
+  address: string;
+  fingerprint: string;
+  message: string;
+};
+
+type TestResult =
+  | {
+      status: "success";
+      latencyMs: number;
+      output: string;
+      jumpSummary: string;
+    }
+  | { status: "failed"; message: string }
+  | { status: "host-key"; challenge: HostKeyChallenge };
+
+function parseHostKeyChallenge(error: unknown): HostKeyChallenge | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const start = message.indexOf("{");
+  const end = message.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const value = JSON.parse(message.slice(start, end + 1)) as Partial<HostKeyChallenge>;
+    if (
+      (value.code !== "HOST_KEY_UNKNOWN" && value.code !== "HOST_KEY_CHANGED") ||
+      typeof value.address !== "string" ||
+      !value.address ||
+      typeof value.fingerprint !== "string" ||
+      !/^SHA256:[A-Za-z0-9+/]{43}$/.test(value.fingerprint)
+    )
+      return null;
+    return {
+      code: value.code,
+      address: value.address,
+      fingerprint: value.fingerprint,
+      message: typeof value.message === "string" ? value.message : "需要核验 SSH 主机指纹",
+    };
+  } catch {
+    return null;
+  }
+}
 export default function Vps() {
   const { data, call, run } = useApp();
   const [editing, setEditing] = useState<VPS | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [overridePublicAddress, setOverridePublicAddress] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    status: "success" | "failed";
-    latencyMs?: number;
-    output?: string;
-    jumpSummary?: string;
-    message?: string;
-  } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [detail, setDetail] = useState<unknown>(null);
   const [detailLabel, setDetailLabel] = useState("");
@@ -33,6 +70,65 @@ export default function Vps() {
         setPendingAction(null);
       }
     }, success);
+  };
+  const performConnectionTest = async () => {
+    if (!editing) return;
+    const target = editing;
+    try {
+      let jumpSummary = "";
+      if (target.jumpId) {
+        const jump = data.vps.find((v) => v.id === target.jumpId);
+        if (!jump) throw new Error("所选跳板机不存在");
+        const jumpResult = await call<{ latencyMs: number }>("sshTest", jump);
+        setConnectionStatus((old) => ({ ...old, [jump.id]: "connected" }));
+        jumpSummary = `跳板机 ${jump.name} ${jumpResult.latencyMs} ms`;
+      }
+      const result = await call<{ latencyMs: number; output: string }>("sshTest", {
+        ...target,
+        publicAddress: overridePublicAddress ? target.publicAddress : target.address,
+      });
+      setConnectionStatus((old) => ({ ...old, [target.id]: "connected" }));
+      setTestResult({
+        status: "success",
+        latencyMs: result.latencyMs,
+        output: result.output,
+        jumpSummary,
+      });
+    } catch (error) {
+      const challenge = parseHostKeyChallenge(error);
+      if (challenge) {
+        setTestResult({ status: "host-key", challenge });
+        return;
+      }
+      setConnectionStatus((old) => ({ ...old, [target.id]: "failed" }));
+      setTestResult({ status: "failed", message: errorText(String(error)) });
+    }
+  };
+
+  const runConnectionTest = async () => {
+    setTestResult(null);
+    setTesting(true);
+    try {
+      await performConnectionTest();
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const trustHostAndContinue = async (challenge: HostKeyChallenge) => {
+    setTestResult(null);
+    setTesting(true);
+    try {
+      await call("trustHost", {
+        address: challenge.address,
+        fingerprint: challenge.fingerprint,
+      });
+      await performConnectionTest();
+    } catch (error) {
+      setTestResult({ status: "failed", message: errorText(String(error)) });
+    } finally {
+      setTesting(false);
+    }
   };
   return (
     <>
@@ -482,73 +578,99 @@ export default function Vps() {
               </Field>
             </div>
             <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-popover py-3 vps-form-actions">
-              <Button
-                type="button"
-                loading={testing}
-                disabled={testing || pendingAction !== null}
-                onClick={() => {
-                  setTestResult(null);
-                  void run(async () => {
-                    setTesting(true);
-                    try {
-                      let jumpSummary = "";
-                      if (editing.jumpId) {
-                        const jump = data.vps.find((v) => v.id === editing.jumpId)!;
-                        const jumpResult = await call<{ latencyMs: number }>("sshTest", jump);
-                        setConnectionStatus((old) => ({ ...old, [jump.id]: "connected" }));
-                        jumpSummary = `跳板机 ${jump.name} ${jumpResult.latencyMs} ms`;
-                      }
-                      const result = await call<{ latencyMs: number; output: string }>("sshTest", {
-                        ...editing,
-                        publicAddress: overridePublicAddress ? editing.publicAddress : editing.address,
-                      });
-                      setConnectionStatus((old) => ({ ...old, [editing.id]: "connected" }));
-                      setTestResult({
-                        status: "success",
-                        latencyMs: result.latencyMs,
-                        output: result.output,
-                        jumpSummary,
-                      });
-                    } catch (error) {
-                      setConnectionStatus((old) => ({ ...old, [editing.id]: "failed" }));
-                      setTestResult({
-                        status: "failed",
-                        message: errorText(String(error)),
-                      });
-                    } finally {
-                      setTesting(false);
-                    }
-                  });
-                }}
-              >
-                {testing ? "测试中…" : "测试连接"}
-              </Button>
+              <div className="flex w-full items-center gap-3">
+                <Button
+                  type="button"
+                  loading={testing}
+                  disabled={testing || pendingAction !== null}
+                  onClick={() => {
+                    void runConnectionTest();
+                  }}
+                >
+                  {testing ? "测试中…" : "测试连接"}
+                </Button>
+                <span className="grow" />
+                <Button type="button" disabled={testing || pendingAction !== null} onClick={() => setEditing(null)}>
+                  取消
+                </Button>
+                <Button type="submit" variant="default" loading={pendingAction === "save-vps"} disabled={pendingAction !== null || testing}>
+                  {pendingAction === "save-vps" ? "保存中…" : "保存 VPS"}
+                </Button>
+              </div>
               {testResult && (
-                <div className={`ssh-test-result ${testResult.status}`}>
-                  {testResult.status === "success" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
-                  <div className="ssh-test-result-content">
-                    <strong>{testResult.status === "success" ? "SSH 连接成功" : "SSH 连接失败"}</strong>
-                    <span>
-                      {testResult.status === "success"
-                        ? [testResult.jumpSummary, `目标 ${testResult.latencyMs} ms`].filter(Boolean).join(" · ")
-                        : testResult.message}
-                    </span>
-                    {testResult.status === "success" && testResult.output && (
-                      <details>
-                        <summary>查看系统信息</summary>
-                        <pre>{testResult.output}</pre>
-                      </details>
+                <div
+                  role={testResult.status === "failed" ? "alert" : "status"}
+                  className={`inline-status-panel ${
+                    testResult.status === "success"
+                      ? "success"
+                      : testResult.status === "host-key"
+                        ? "warning"
+                        : "error"
+                  } w-full`}
+                >
+                  {testResult.status === "success" ? (
+                    <CheckCircle2 size={15} />
+                  ) : (
+                    <AlertCircle size={15} />
+                  )}
+                  <div className="inline-status-content">
+                    {testResult.status === "success" ? (
+                      <>
+                        <strong>SSH 连接成功</strong>
+                        <span>
+                          {[testResult.jumpSummary, `目标 ${testResult.latencyMs} ms`]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                        {testResult.output && (
+                          <details>
+                            <summary>查看系统信息</summary>
+                            <pre className="output">{testResult.output}</pre>
+                          </details>
+                        )}
+                      </>
+                    ) : testResult.status === "host-key" ? (
+                      <>
+                        <strong>
+                          {testResult.challenge.code === "HOST_KEY_CHANGED"
+                            ? "SSH 主机指纹发生变化"
+                            : "首次连接，需要核验 SSH 主机指纹"}
+                        </strong>
+                        <span>{testResult.challenge.address}</span>
+                        <code className="mono break-all text-foreground">
+                          {testResult.challenge.fingerprint}
+                        </code>
+                        <p>
+                          {testResult.challenge.code === "HOST_KEY_CHANGED"
+                            ? "此地址已有受信任的指纹，但服务器返回了不同指纹。请先通过服务商控制台或其他可信渠道重新核验。"
+                            : "请先通过服务商控制台或其他可信渠道核验此指纹。信任后，Gungun 会自动保存并重新执行 SSH 测试。"}
+                        </p>
+                        <div className="mt-2">
+                          <Button
+                            type="button"
+                            variant="default"
+                            disabled={testing || pendingAction !== null}
+                            onClick={() => {
+                              void trustHostAndContinue(testResult.challenge);
+                            }}
+                          >
+                            {testing
+                              ? "正在信任并重新测试…"
+                              : testResult.challenge.code === "HOST_KEY_CHANGED"
+                                ? "已核验，更新指纹并继续测试"
+                                : "信任指纹并继续测试"}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong>SSH 连接失败</strong>
+                        <span>{testResult.message}</span>
+                      </>
                     )}
                   </div>
                 </div>
               )}
-              <span className="grow" />
-              <Button type="button" disabled={testing || pendingAction !== null} onClick={() => setEditing(null)}>
-                取消
-              </Button>
-              <Button type="submit" variant="default" loading={pendingAction === "save-vps"} disabled={pendingAction !== null || testing}>
-                {pendingAction === "save-vps" ? "保存中…" : "保存 VPS"}
-              </Button>
             </div>
           </form>
         )}
