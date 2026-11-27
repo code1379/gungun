@@ -6,7 +6,13 @@ import {
   type ReactNode,
   type ComponentProps,
 } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "./ui/dialog";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
@@ -18,10 +24,38 @@ import { X, AlertTriangle, Check, Server } from "lucide-react";
 import { errorText, useApp } from "../api";
 import { Button as StyledButton } from "./ui/button";
 export { Input, Textarea, Checkbox, Select };
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption } from "./ui/table";
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "./ui/table";
 export { Progress } from "./ui/progress";
-export function Button({ variant = "secondary", className, size, ...props }: Omit<ComponentProps<typeof StyledButton>, "variant"> & { variant?: ComponentProps<typeof StyledButton>["variant"] | "danger" }) {
-  return <StyledButton {...props} variant={variant === "danger" ? "destructive" : variant} className={className} size={size || ((typeof className === "string" && className.includes("icon-only")) ? "icon" : "default")} />;
+export function Button({
+  variant = "secondary",
+  className,
+  size,
+  ...props
+}: Omit<ComponentProps<typeof StyledButton>, "variant"> & {
+  variant?: ComponentProps<typeof StyledButton>["variant"] | "danger";
+}) {
+  return (
+    <StyledButton
+      {...props}
+      variant={variant === "danger" ? "destructive" : variant}
+      className={className}
+      size={
+        size ||
+        (typeof className === "string" && className.includes("icon-only")
+          ? "icon"
+          : "default")
+      }
+    />
+  );
 }
 export function Modal({
   open,
@@ -39,8 +73,18 @@ export function Modal({
   wide?: boolean;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className={cn("max-h-[85vh] overflow-y-auto sm:max-w-[540px]", wide && "sm:max-w-[820px]")}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent
+        className={cn(
+          "max-h-[85vh] overflow-y-auto sm:max-w-[540px]",
+          wide && "sm:max-w-[820px]",
+        )}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description || ""}</DialogDescription>
@@ -63,17 +107,32 @@ export function Field({
   const id = useId();
   const direct =
     isValidElement<{ id?: string; "aria-describedby"?: string }>(children) &&
-    ((typeof children.type === "string" && ["input", "select", "textarea"].includes(children.type)) || [Input, Textarea, Select, Checkbox].includes(children.type as typeof Input));
+    ((typeof children.type === "string" &&
+      ["input", "select", "textarea"].includes(children.type)) ||
+      [Input, Textarea, Select, Checkbox].includes(
+        children.type as typeof Input,
+      ));
   return (
-    <div className="field grid min-w-0 gap-2">
-      {direct ? <Label htmlFor={id}>{label}</Label> : <span className="text-xs font-medium">{label}</span>}
+    <div className="field mb-4 grid min-w-0 gap-2">
+      {direct ? (
+        <Label htmlFor={id}>{label}</Label>
+      ) : (
+        <span className="text-xs font-medium">{label}</span>
+      )}
       {direct
         ? cloneElement(children, {
             id,
             "aria-describedby": hint ? `${id}-hint` : undefined,
           })
         : children}
-      {hint && <small id={`${id}-hint`} className="text-xs leading-relaxed text-muted-foreground">{hint}</small>}
+      {hint && (
+        <small
+          id={`${id}-hint`}
+          className="text-xs leading-relaxed text-muted-foreground"
+        >
+          {hint}
+        </small>
+      )}
     </div>
   );
 }
@@ -88,9 +147,13 @@ export function Empty({
 }) {
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border px-8 py-14 text-center">
-      <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Server size={23}/></div>
+      <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <Server size={23} />
+      </div>
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      <p className="max-w-[48ch] text-sm leading-relaxed text-muted-foreground">{children}</p>
+      <p className="max-w-[48ch] text-sm leading-relaxed text-muted-foreground">
+        {children}
+      </p>
       {action}
     </div>
   );
@@ -107,10 +170,16 @@ export function PageHeader({
   return (
     <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-        <p className="mt-2 max-w-[72ch] text-sm leading-relaxed text-muted-foreground">{description}</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          {title}
+        </h1>
+        <p className="mt-2 max-w-[72ch] text-sm leading-relaxed text-muted-foreground">
+          {description}
+        </p>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      )}
     </header>
   );
 }
@@ -121,7 +190,20 @@ export function Badge({
   children: ReactNode;
   tone?: "neutral" | "good" | "bad" | "blue";
 }) {
-  return <BadgePrimitive variant="secondary" className={cn("font-medium", tone === "good" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", tone === "bad" && "bg-destructive/10 text-destructive", tone === "blue" && "bg-primary/15 text-primary")}>{children}</BadgePrimitive>;
+  return (
+    <BadgePrimitive
+      variant="secondary"
+      className={cn(
+        "font-medium",
+        tone === "good" &&
+          "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        tone === "bad" && "bg-destructive/10 text-destructive",
+        tone === "blue" && "bg-primary/15 text-primary",
+      )}
+    >
+      {children}
+    </BadgePrimitive>
+  );
 }
 export function Confirm({
   children,
@@ -244,4 +326,3 @@ export const protocolLabels: Record<string, string> = {
 export function pretty(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
-

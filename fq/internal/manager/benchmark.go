@@ -97,7 +97,7 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if e = readiness.Wait(ctx); e != nil {
 		return nil, e
 	}
-	proxy, _ := url.Parse("http://" + endpoint)
+	proxy, _ := url.Parse("socks5://" + endpoint)
 	transport := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: time.Duration(r.TimeoutMS) * time.Millisecond, CheckRedirect: func(req *http.Request, via []*http.Request) error {

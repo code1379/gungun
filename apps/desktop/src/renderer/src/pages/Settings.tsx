@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Settings as SettingsType } from "@gungun/domain";
 import { useApp } from "../api";
-import { Button, Field, PageHeader, pretty, Select, Input } from "../components/ui";
+import {
+  Button,
+  Field,
+  PageHeader,
+  pretty,
+  Select,
+  Input,
+} from "../components/ui";
 export default function Settings() {
   const { data, call, run } = useApp();
   const [draft, setDraft] = useState<SettingsType | null>(null);
@@ -30,8 +37,16 @@ export default function Settings() {
         <section className="section settings-section">
           <h2>外观</h2>
           <div className="form-grid">
-            <Field label="应用主题" hint="保存后同步到主窗口、终端、日志和任务窗口。跟随系统时自动响应 macOS 外观变化。">
-              <Select value={values.theme} onValueChange={(value) => update("theme", value as SettingsType["theme"])}>
+            <Field
+              label="应用主题"
+              hint="保存后同步到主窗口、终端、日志和任务窗口。跟随系统时自动响应 macOS 外观变化。"
+            >
+              <Select
+                value={values.theme}
+                onValueChange={(value) =>
+                  update("theme", value as SettingsType["theme"])
+                }
+              >
                 <option value="system">跟随系统</option>
                 <option value="light">浅色</option>
                 <option value="dark">深色</option>
@@ -201,4 +216,3 @@ export default function Settings() {
     </>
   );
 }
-

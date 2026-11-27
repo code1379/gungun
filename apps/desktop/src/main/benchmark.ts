@@ -90,7 +90,7 @@ export class Benchmark {
         "--show-error",
         "--fail",
         "--proxy",
-        `http://127.0.0.1:${port}`,
+        `socks5h://127.0.0.1:${port}`,
         "--noproxy",
         "",
         "--max-time",

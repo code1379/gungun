@@ -30,7 +30,9 @@ try {
     const trigger = page.getByRole("combobox", { name: label, exact: true });
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
+    await page
+      .getByRole("option", { name: option, exact: typeof option === "string" })
+      .click();
   };
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(
@@ -84,17 +86,29 @@ try {
   await choose("应用主题", "深色");
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect.poll(() => app.evaluate(({nativeTheme}) => nativeTheme.themeSource)).toBe("dark");
+  await expect
+    .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
+    .toBe("dark");
+  await page.locator(".page-content").evaluate((el) => {
+    el.scrollTop = 0;
+  });
   await page.screenshot({ path: "test-results/settings-dark.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await choose("应用主题", "浅色");
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
-  await expect.poll(() => app.evaluate(({nativeTheme}) => nativeTheme.themeSource)).toBe("light");
+  await expect
+    .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
+    .toBe("light");
+  await page.locator(".page-content").evaluate((el) => {
+    el.scrollTop = 0;
+  });
   await page.screenshot({ path: "test-results/settings-light.png" });
   await choose("应用主题", "跟随系统");
   await page.getByRole("button", { name: "保存设置" }).click();
-  await expect.poll(() => app.evaluate(({nativeTheme}) => nativeTheme.themeSource)).toBe("system");
+  await expect
+    .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
+    .toBe("system");
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).not.toHaveClass(/dark/);
@@ -102,15 +116,27 @@ try {
   await page.screenshot({ path: "test-results/desktop-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveClass(/dark/);
-  console.log("Theme smoke passed: persisted system/light/dark, nativeTheme source and live system preference changes.");
+  console.log(
+    "Theme smoke passed: persisted system/light/dark, nativeTheme source and live system preference changes.",
+  );
   await expect(
     page.getByRole("heading", { name: "主控制台", exact: true }),
   ).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await page.screenshot({ path: "test-results/desktop.png" });
   if (process.env.GUNGUN_SCREENSHOT_LOG === "1")
-    for (const name of ["desktop", "desktop-light", "settings-dark", "settings-light"])
-      console.log("GUNGUN_UI_SCREENSHOT_" + name + ":" + (await readFile(`test-results/${name}.png`)).toString("base64"));
+    for (const name of [
+      "desktop",
+      "desktop-light",
+      "settings-dark",
+      "settings-light",
+    ])
+      console.log(
+        "GUNGUN_UI_SCREENSHOT_" +
+          name +
+          ":" +
+          (await readFile(`test-results/${name}.png`)).toString("base64"),
+      );
   const snapshot = await page.evaluate(() => window.gungun.invoke("snapshot"));
   if (
     !snapshot.ok ||
@@ -124,27 +150,58 @@ try {
   const saved = await page.evaluate(async () => {
     const current = await window.gungun.invoke("snapshot");
     if (!current.ok) return current;
-    return window.gungun.invoke("saveSettings", { ...current.value.settings, theme: "light" });
+    return window.gungun.invoke("saveSettings", {
+      ...current.value.settings,
+      theme: "light",
+    });
   });
   if (!saved.ok) throw new Error(saved.error);
   await app.close();
   app = await electron.launch(launchOptions);
   const reopened = await app.firstWindow();
-  await expect(reopened.getByRole("heading", { name: "主控制台", exact: true })).toBeVisible();
-  await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("light");
+  await expect(
+    reopened.getByRole("heading", { name: "主控制台", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
+    .toBe("light");
   await expect(reopened.locator("html")).toHaveAttribute("data-theme", "light");
-  console.log("Theme restart passed: saved light preference restored before the first application window.");
+  console.log(
+    "Theme restart passed: saved light preference restored before the first application window.",
+  );
   if (errors.length) throw new Error(errors.join("\n"));
   console.log(
     "Desktop smoke passed: fresh start, NAT VPS, import, tags, two-hop chain, settings and SQLite.",
   );
 } catch (error) {
   const page = await app.firstWindow();
-  console.log("UI FAILURE STATE:", await page.evaluate(() => [...document.querySelectorAll('[role="combobox"], [role="option"], [data-slot="select-content"]')].map(el => ({role:el.getAttribute("role"),text:el.textContent,expanded:el.getAttribute("aria-expanded"),state:el.getAttribute("data-state"),rect:el.getBoundingClientRect().toJSON(),style: {visibility:getComputedStyle(el).visibility,display:getComputedStyle(el).display}}))));
-  if (process.env.GUNGUN_SCREENSHOT_LOG === "1") console.log("GUNGUN_UI_SCREENSHOT_failure:" + (await page.screenshot()).toString("base64"));
+  console.log(
+    "UI FAILURE STATE:",
+    await page.evaluate(() =>
+      [
+        ...document.querySelectorAll(
+          '[role="combobox"], [role="option"], [data-slot="select-content"]',
+        ),
+      ].map((el) => ({
+        role: el.getAttribute("role"),
+        text: el.textContent,
+        expanded: el.getAttribute("aria-expanded"),
+        state: el.getAttribute("data-state"),
+        rect: el.getBoundingClientRect().toJSON(),
+        style: {
+          visibility: getComputedStyle(el).visibility,
+          display: getComputedStyle(el).display,
+        },
+      })),
+    ),
+  );
+  if (process.env.GUNGUN_SCREENSHOT_LOG === "1")
+    console.log(
+      "GUNGUN_UI_SCREENSHOT_failure:" +
+        (await page.screenshot()).toString("base64"),
+    );
   throw error;
 } finally {
   await app.close();
   await rm(dir, { recursive: true, force: true });
 }
-

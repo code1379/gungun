@@ -4,12 +4,20 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useApp } from "../api";
 import { terminalTheme } from "../lib/theme";
-import { Badge, Button, ErrorView, pretty, Select, Progress } from "../components/ui";
+import {
+  Badge,
+  Button,
+  ErrorView,
+  pretty,
+  Select,
+  Progress,
+} from "../components/ui";
 export default function WorkWindow({ type, id }: { type: string; id: string }) {
   const { data, call, resolvedTheme } = useApp();
   const xterm = useRef<Terminal | null>(null);
   useEffect(() => {
-    if (xterm.current) xterm.current.options.theme = terminalTheme(resolvedTheme);
+    if (xterm.current)
+      xterm.current.options.theme = terminalTheme(resolvedTheme);
   }, [resolvedTheme]);
   const terminalRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -22,7 +30,9 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "Menlo, Monaco, monospace",
-      theme: terminalTheme(document.documentElement.classList.contains("dark") ? "dark" : "light"),
+      theme: terminalTheme(
+        document.documentElement.classList.contains("dark") ? "dark" : "light",
+      ),
     });
     xterm.current = terminal;
     const fit = new FitAddon();
@@ -160,4 +170,3 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
     </div>
   );
 }
-

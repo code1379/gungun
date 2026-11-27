@@ -46,8 +46,10 @@ export default function App() {
     data?.tasks.filter((t) => ["queued", "running"].includes(t.state)).length ||
     0;
   return (
-    <div className={`shell grid h-screen overflow-hidden text-foreground ${collapsed ? "collapsed grid-cols-[72px_1fr]" : "grid-cols-[220px_1fr]"}`}>
-      <aside className="sidebar flex flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <div
+      className={`shell grid h-screen grid-rows-[minmax(0,1fr)] overflow-hidden text-foreground ${collapsed ? "collapsed grid-cols-[72px_1fr]" : "grid-cols-[220px_1fr]"}`}
+    >
+      <aside className="sidebar flex min-h-0 w-full flex-col overflow-hidden border-r border-border bg-sidebar text-sidebar-foreground">
         <div className="window-drag" />
         <div className="brand">
           <div className="brand-symbol">g</div>
@@ -64,7 +66,7 @@ export default function App() {
               variant="ghost"
               key={item.id}
               title={collapsed ? item.label : undefined}
-              className={`nav-item ${page === item.id ? "active" : ""}`}
+              className={`nav-item justify-start ${page === item.id ? "active" : ""}`}
               onClick={() => setPage(item.id)}
             >
               <item.icon size={18} />
@@ -96,7 +98,7 @@ export default function App() {
           </Button>
         </div>
       </aside>
-      <main className="workspace flex min-w-0 flex-col bg-background">
+      <main className="workspace flex min-h-0 min-w-0 flex-col bg-background">
         <div className="topbar window-drag">
           <span>{navigation.find((n) => n.id === page)?.label}</span>
           <span className="grow" />
@@ -118,4 +120,3 @@ export default function App() {
     </div>
   );
 }
-

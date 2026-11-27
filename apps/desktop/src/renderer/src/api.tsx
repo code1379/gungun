@@ -43,9 +43,12 @@ export function Provider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   const preference = data?.settings.theme || "system";
-  const resolvedTheme = preference === "system" ? (systemDark ? "dark" : "light") : preference;
+  const resolvedTheme =
+    preference === "system" ? (systemDark ? "dark" : "light") : preference;
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => setSystemDark(media.matches);
@@ -118,4 +121,3 @@ export function errorText(error: string) {
   }
   return error;
 }
-
