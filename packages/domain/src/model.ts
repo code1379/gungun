@@ -104,7 +104,7 @@ export const serviceSchema = z
     port: z.number().int().min(0).max(65535),
     publicPort: z.number().int().min(0).max(65535),
     edgeScheme: z.enum(["http", "https"]).default("https"),
-    edgePort: portSchema.default(443),
+    edgePort: z.number().int().min(0).max(65535).default(0),
     access: z.enum(["direct", "cdn", "argo"]),
     egress: z.enum(["DIRECT", "WARP"]).default("DIRECT"),
     domain: z.union([z.literal(""), domainSchema]).default(""),
@@ -125,6 +125,7 @@ export const serviceSchema = z
         path: ["access"],
       });
     if (s.access === "cdn") {
+      if (s.edgePort === 0) s.edgePort = s.edgeScheme === "http" ? 80 : 443;
       const allowed = s.edgeScheme === "http"
         ? [80, 8080, 8880, 2052, 2082, 2086, 2095]
         : [443, 2053, 2083, 2087, 2096, 8443];
