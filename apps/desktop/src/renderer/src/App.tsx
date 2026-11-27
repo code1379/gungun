@@ -7,6 +7,7 @@ import {
   Layers,
   ListTodo,
   Settings as SettingsIcon,
+  CircleHelp,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import Network from "./pages/Network";
 import Nodes from "./pages/Nodes";
 import Tasks from "./pages/Tasks";
 import Settings from "./pages/Settings";
+import Help from "./pages/Help";
 import WorkWindow from "./pages/WorkWindow";
 const navigation = [
   { id: "dashboard", label: "主控制台", icon: LayoutDashboard },
@@ -28,6 +30,7 @@ const navigation = [
   { id: "nodes", label: "节点与订阅", icon: Layers },
   { id: "tasks", label: "任务中心", icon: ListTodo },
   { id: "settings", label: "设置", icon: SettingsIcon },
+  { id: "help", label: "帮助与文档", icon: CircleHelp },
 ];
 export default function App() {
   const [page, setPage] = useState("dashboard");
@@ -114,6 +117,7 @@ export default function App() {
           {page === "nodes" && <Nodes />}
           {page === "tasks" && <Tasks />}
           {page === "settings" && <Settings />}
+          {page === "help" && <Help />}
         </div>
       </main>
       <Feedback />
