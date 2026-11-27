@@ -122,7 +122,7 @@ export default function Deploy() {
       })
       .catch((error) => {
         const message = String(error);
-        if (/\\/usr\\/local\\/bin\\/fq: not found|fq: not found/.test(message)) {
+        if (message.includes("/usr/local/bin/fq: not found") || message.includes("fq: not found")) {
           setRemoteStatus("missing-fq");
           return;
         }
