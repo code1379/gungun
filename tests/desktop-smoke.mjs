@@ -58,16 +58,18 @@ try {
   await page.getByLabel("SSH 登录密码", { exact: true }).fill(ssh.password);
   await page.getByRole("checkbox", { name: "与服务器地址相同" }).uncheck();
   await page.getByPlaceholder("例如 NAT 映射公网 IP").fill("203.0.113.7");
+  await page.getByRole("button", { name: "测试连接", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "信任指纹并继续测试", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(ssh.fingerprint, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "信任指纹并继续测试", exact: true }).click();
+  await expect(page.getByText("SSH 连接成功", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "保存 VPS", exact: true }).click();
   await expect(page.getByRole("button", { name: /Smoke NAT/ })).toBeVisible();
   const source = await page.evaluate(() => window.gungun.invoke("snapshot"));
   if (!source.ok) throw new Error(source.error);
   const vps = source.value.vps[0];
-  const trust = await page.evaluate(
-    (input) => window.gungun.invoke("trustHost", input),
-    { address: `127.0.0.1:${ssh.port}`, fingerprint: ssh.fingerprint },
-  );
-  if (!trust.ok) throw new Error(trust.error);
   await page.getByRole("button", { name: /Smoke NAT/ }).click();
   await page.getByRole("button", { name: "安装 SSH 主密钥", exact: true }).click();
   await expect(page.getByText("SSH 密钥认证已启用", { exact: true })).toBeVisible();
