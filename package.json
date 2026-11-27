@@ -2,7 +2,7 @@
   "name": "gungun",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@11.25.0",
+  "packageManager": "pnpm@12.23.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @gungun/desktop dev",
@@ -11,12 +11,13 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "node --import tsx tests/core-integration.ts",
-    "test:go": "node scripts/test-go.mjs",
-    "fq:build": "node scripts/build-fq.mjs",
-    "cores:download": "node scripts/download-cores.mjs",
+    "test:go": "NODE_USE_ENV_PROXY=1 node scripts/test-go.mjs",
+    "fq:build": "NODE_USE_ENV_PROXY=1 node scripts/build-fq.mjs",
+    "cores:download": "NODE_USE_ENV_PROXY=1 node scripts/download-cores.mjs",
     "package:mac": "pnpm --filter @gungun/desktop package:mac",
     "test:desktop": "node tests/desktop-smoke.mjs",
-    "prepare:dev": "node scripts/prepare-dev.mjs"
+    "prepare:dev": "NODE_USE_ENV_PROXY=1 node scripts/prepare-dev.mjs",
+    "electron:install": "node scripts/install-electron.mjs"
   },
   "dependencies": {
     "yaml": "^2.8.1",
