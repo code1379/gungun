@@ -106,12 +106,25 @@ describe("链式代理模型与 Mihomo 配置", () => {
     expect(chainProxies(c, nodes)[1].port).toBe(8443);
   });
   it("拒绝缺失引用、重复节点和后续 UDP 拨号", () => {
-    const a = node(),
+    const a = node("anytls"),
       b = node("tuic");
     expect(() => validateChain(chain([a.id, b.id]), [a, b])).toThrow("UDP");
     expect(() => validateChain(chain([a.id, "gone"]), [a])).toThrow("已删除");
     expect(() => validateChain(chain([a.id, a.id]), [a])).toThrow("重复");
     expect(validateChain(chain([b.id, a.id]), [a, b])).toHaveLength(2);
+  });
+  it.each([
+    ["hysteria2", "vless-ws"],
+    ["hysteria2", "vless-reality"],
+    ["tuic", "vless-ws"],
+    ["tuic", "vless-reality"],
+  ])("拒绝当前核心不稳定的 %s → %s，保留节点参数", (first, last) => {
+    const nodes = [node(first), node(last)];
+    const before = structuredClone(nodes);
+    expect(() => singboxConfig(nodes, chain(nodes.map((n) => n.id)))).toThrow(
+      "实测下载不稳定",
+    );
+    expect(nodes).toEqual(before);
   });
   it("拒绝把链路导出成普通分享链接", () => {
     expect(() => exportBase64([node()], true)).toThrow("无法表达");

@@ -388,7 +388,16 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		t.Run(node.(M)["protocol"].(string), func(t *testing.T) { run(t, configs[i]) })
 	}
 	for i, name := range names {
-		t.Run("chain-matrix/"+name, func(t *testing.T) { run(t, configs[len(firstNodes)+i]) })
+		config := configs[len(firstNodes)+i]
+		if rejection, unsupported := config["unsupported"].(string); unsupported {
+			t.Run("unsupported-chain/"+name, func(t *testing.T) {
+				if !strings.Contains(rejection, "实测下载不稳定") {
+					t.Fatal("unexpected capability rejection", rejection)
+				}
+			})
+			continue
+		}
+		t.Run("chain-matrix/"+name, func(t *testing.T) { run(t, config) })
 	}
 }
 

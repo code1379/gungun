@@ -567,7 +567,7 @@ export default function Nodes() {
             ))}
             <p className="hint">
               后续跳暂不支持 Hysteria2 / TUIC 的 UDP 拨号。请使用 VLESS、AnyTLS
-              或 Snell 出口。保存后请测试完整链路。
+              或 Snell 出口。QUIC 第一跳后仅支持 AnyTLS / Snell：当前核心 QUIC → VLESS 实测下载不稳定。保存后请测试完整链路。
             </p>
             <div className="form-actions">
               <Button

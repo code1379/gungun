@@ -2,7 +2,9 @@ import { _electron as electron, expect } from "@playwright/test";
 import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { desktopSSHFixture } from "./desktop-ssh-fixture.mjs";
 const dir = await mkdtemp(join(tmpdir(), "gungun-smoke-"));
+const ssh = await desktopSSHFixture(dir);
 const args = process.env.PACKAGED_APP ? [] : [resolve("apps/desktop")];
 if (process.platform === "linux")
   args.unshift("--no-sandbox", "--ozone-platform=headless", "--disable-gpu");
@@ -46,10 +48,36 @@ try {
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByLabel("名称", { exact: true }).fill("Smoke NAT");
   await choose("主机类型", /^NAT/);
-  await page.getByLabel("SSH 地址", { exact: true }).fill("100.100.1.2");
+  await page.getByLabel("SSH 地址", { exact: true }).fill("127.0.0.1");
+  await page.getByLabel("SSH 端口", { exact: true }).fill(String(ssh.port));
+  await choose("认证方式", "密码");
+  await page.getByLabel("密码", { exact: true }).fill(ssh.password);
   await page.getByLabel("公网地址", { exact: true }).fill("203.0.113.7");
   await page.getByRole("button", { name: "保存 VPS", exact: true }).click();
   await expect(page.getByRole("button", { name: /Smoke NAT/ })).toBeVisible();
+  const source = await page.evaluate(() => window.gungun.invoke("snapshot"));
+  if (!source.ok) throw new Error(source.error);
+  const vps = source.value.vps[0];
+  const trust = await page.evaluate(
+    (input) => window.gungun.invoke("trustHost", input),
+    { address: `127.0.0.1:${ssh.port}`, fingerprint: ssh.fingerprint },
+  );
+  if (!trust.ok) throw new Error(trust.error);
+  const opened = app.waitForEvent("window");
+  const open = await page.evaluate(
+    (id) => window.gungun.invoke("openWindow", { type: "terminal", id }),
+    vps.id,
+  );
+  if (!open.ok) throw new Error(open.error);
+  const terminal = await opened;
+  await expect(terminal.locator(".xterm-viewport")).toBeVisible();
+  await expect.poll(() => ssh.shells).toBe(1);
+  await terminal.evaluate(() => {
+    window.smokeTerminalOutput = "";
+    window.gungun.terminalData((text) => {
+      window.smokeTerminalOutput += text;
+    });
+  });
   await page.getByRole("button", { name: "节点与订阅", exact: true }).click();
   await expect(page.getByRole("tab", { name: /链式代理/ })).toBeVisible();
   await page.getByRole("button", { name: "新建分组" }).click();
@@ -86,6 +114,11 @@ try {
   await choose("应用主题", "深色");
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(terminal.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(terminal.locator(".xterm-viewport")).toHaveCSS(
+    "background-color",
+    "rgb(23, 25, 28)",
+  );
   await expect
     .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
     .toBe("dark");
@@ -97,6 +130,11 @@ try {
   await choose("应用主题", "浅色");
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await expect(terminal.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(terminal.locator(".xterm-viewport")).toHaveCSS(
+    "background-color",
+    "rgb(247, 248, 250)",
+  );
   await expect
     .poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource))
     .toBe("light");
@@ -138,6 +176,15 @@ try {
           (await readFile(`test-results/${name}.png`)).toString("base64"),
       );
   const snapshot = await page.evaluate(() => window.gungun.invoke("snapshot"));
+  await terminal.evaluate(() => window.gungun.terminalInput("theme-echo\n"));
+  await expect
+    .poll(() => terminal.evaluate(() => window.smokeTerminalOutput))
+    .toContain("received:theme-echo");
+  if (ssh.shells !== 1)
+    throw new Error("Theme change recreated the SSH session");
+  console.log(
+    "Terminal theme passed: actual SSH stream survived appearance changes without reconnecting.",
+  );
   if (
     !snapshot.ok ||
     snapshot.value.nodes.length !== 2 ||
@@ -203,5 +250,6 @@ try {
   throw error;
 } finally {
   await app.close();
+  await ssh.close();
   await rm(dir, { recursive: true, force: true });
 }

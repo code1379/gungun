@@ -14,15 +14,21 @@ const requests = z
 process.stdout.write(
   JSON.stringify(
     requests.map(({ nodes, nodeIds }) => {
-      const config = singboxConfig(
-        nodes,
-        nodeIds
-          ? { id: randomUUID(), name: "Runtime integration chain", nodeIds }
-          : undefined,
-        0,
-      );
-      config.log.level = "debug";
-      return config;
+      try {
+        const config = singboxConfig(
+          nodes,
+          nodeIds
+            ? { id: randomUUID(), name: "Runtime integration chain", nodeIds }
+            : undefined,
+          0,
+        );
+        config.log.level = "debug";
+        return config;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("实测下载不稳定"))
+          return { unsupported: error.message };
+        throw error;
+      }
     }),
   ),
 );

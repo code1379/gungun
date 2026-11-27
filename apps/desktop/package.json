@@ -54,7 +54,12 @@
     "extraResources": [
       {
         "from": "../../resources/bin",
-        "to": "bin"
+        "to": "bin",
+        "filter": [
+          "fq-linux-amd64",
+          "fq-linux-arm64",
+          "sing-box-darwin-arm64"
+        ]
       },
       {
         "from": "../../resources/THIRD_PARTY_NOTICES.md",
