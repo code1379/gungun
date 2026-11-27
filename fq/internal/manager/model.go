@@ -153,6 +153,14 @@ func (s *State) Normalize() error {
 				}
 			}
 		}
+		if v.Protocol == "vless-ws" {
+			for j := 0; j < i; j++ {
+				previous := &s.Services[j]
+				if previous.Protocol == "vless-ws" && previous.Access != "argo" && v.Access != "argo" && previous.PublicPort != v.PublicPort {
+					return errors.New("VLESS + WS access modes must share one public mapped port")
+				}
+			}
+		}
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
 				if s.Kind == "nat" {
