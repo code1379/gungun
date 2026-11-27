@@ -171,6 +171,7 @@ func (s *State) Normalize() error {
 					return errors.New("VLESS + WS access modes must share one public mapped port")
 				}
 			}
+		}
 		if v.Access != "argo" {
 			if v.PublicPort == 0 {
 				if s.Kind == "nat" {
