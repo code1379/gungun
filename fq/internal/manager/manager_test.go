@@ -110,6 +110,37 @@ func TestNATAndPortConflicts(t *testing.T) {
 		t.Fatal("duplicate protocol accepted")
 	}
 }
+func TestVlessWSAccessModesShareOneInbound(t *testing.T) {
+	s := fixture()
+	direct := service("vless-ws", 45516)
+	direct.PublicPort = 45516
+	cdn := direct
+	cdn.ID = "vless-ws-cdn"
+	cdn.Access = "cdn"
+	cdn.Domain = "cdn.example.com"
+	cdn.PublicPort = 45516
+	cdn.EdgeScheme = "http"
+	cdn.EdgePort = 80
+	argo := direct
+	argo.ID = "vless-ws-argo"
+	argo.Access = "argo"
+	argo.Domain = "argo.example.com"
+	argo.PublicPort = 0
+	s.Services = []Service{direct, cdn, argo}
+	if err := s.Normalize(); err != nil { t.Fatal(err) }
+	inbounds := SingBoxConfig(s, "/etc/gungun")["inbounds"].([]any)
+	count := 0
+	for _, value := range inbounds {
+		in := value.(M)
+		if in["type"] == "vless" { count++; if in["listen_port"] != 45516 || in["tls"] == nil { t.Fatalf("unexpected shared VLESS inbound: %#v", in) } }
+	}
+	if count != 1 { t.Fatalf("VLESS inbound count = %d, want 1", count) }
+	nodes := Export(s)["nodes"].([]any)
+	var cdnNode M
+	for _, value := range nodes { node := value.(M); if node["access"] == "cdn" { cdnNode = node } }
+	if cdnNode["port"] != 80 || cdnNode["tls"] != false { t.Fatalf("HTTP CDN export = %#v", cdnNode) }
+}
+
 func TestArgoExport(t *testing.T) {
 	s := fixture()
 	v := service("vless-ws", 20000)
