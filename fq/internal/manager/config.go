@@ -114,6 +114,7 @@ func Export(s State) M {
 				base["id"] = s.HostID + ":" + v.ID + ":cdn"
 				base["address"] = v.Domain
 				base["port"] = v.EdgePort
+				base["tls"] = v.EdgeScheme != "http"
 			}
 			nodes = append(nodes, base)
 		}
