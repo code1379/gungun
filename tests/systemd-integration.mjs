@@ -22,7 +22,9 @@ const upstream = createServer((_req, res) => {
 await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
 try {
   execFileSync("sudo", ["install", "-d", "-m", "755", "/usr/local/lib/gungun"]);
-  for (const name of ["sing-box"])
+  // Both binaries were downloaded and SHA256-verified in the authenticated
+  // dependency step; service validation needs no GitHub credentials under sudo.
+  for (const name of ["sing-box", "caddy"])
     execFileSync("sudo", [
       "install",
       "-m",
@@ -116,7 +118,6 @@ try {
   console.log(
     "PASS: actual systemd installation, certificate deployment, six protocols, export, listener conflict rollback, restored service health",
   );
-  run(["core", "update", "caddy"]);
   current.websites = [
     {
       id: "fixture-site",
@@ -179,4 +180,3 @@ try {
     console.error("Cleanup:", e.message);
   }
 }
-

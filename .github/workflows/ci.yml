@@ -34,6 +34,7 @@ jobs:
       - run: pnpm cores:download
         env:
           GH_TOKEN: ${{ github.token }}
+          WITH_CADDY: "1"
       - name: Go race tests and six real sing-box protocols
         working-directory: fq
         env:
@@ -70,3 +71,4 @@ jobs:
         run: mkdir -p test-results && pnpm test:integration | tee test-results/chain-macos.txt
       - name: Real desktop workflow on macOS
         run: pnpm test:desktop
+

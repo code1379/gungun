@@ -8,11 +8,24 @@ const arch =
   (process.env.BUILD_ARCH || process.arch) === "x64"
     ? "amd64"
     : process.env.BUILD_ARCH || process.arch;
-const assets = [{
-  repo: "SagerNet/sing-box", version: "v1.14.4",
-  name: `sing-box-1.14.4-${platform}-${arch}.tar.gz`,
-  output: `sing-box-${platform}-${arch}`,
-}];
+const assets = [
+  {
+    repo: "SagerNet/sing-box",
+    version: "v1.14.4",
+    name: `sing-box-1.14.4-${platform}-${arch}.tar.gz`,
+    output: `sing-box-${platform}-${arch}`,
+    executable: `sing-box-1.14.4-${platform}-${arch}/sing-box`,
+  },
+];
+if (process.env.WITH_CADDY === "1") {
+  assets.push({
+    repo: "caddyserver/caddy",
+    version: "v2.10.2",
+    name: `caddy_2.10.2_${platform}_${arch}.tar.gz`,
+    output: `caddy-${platform}-${arch}`,
+    executable: "caddy",
+  });
+}
 const output = resolve("resources/bin");
 await mkdir(output, { recursive: true });
 for (const asset of assets) {
@@ -47,9 +60,7 @@ for (const asset of assets) {
     try {
       await writeFile(join(dir, "core.tar.gz"), bytes);
       execFileSync("tar", ["-xzf", join(dir, "core.tar.gz"), "-C", dir]);
-      executable = await readFile(
-        join(dir, `sing-box-1.14.4-${platform}-${arch}`, "sing-box"),
-      );
+      executable = await readFile(join(dir, asset.executable));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -57,4 +68,3 @@ for (const asset of assets) {
   await writeFile(join(output, asset.output), executable, { mode: 0o755 });
   console.log(`Verified ${asset.name}: ${entry.digest}`);
 }
-

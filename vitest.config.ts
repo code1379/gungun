@@ -7,5 +7,8 @@ export default defineConfig({
       ssh2: resolve("apps/desktop/node_modules/ssh2/lib/index.js"),
     },
   },
-  test: { include: ["tests/**/*.test.ts"], testTimeout: 30000 },
+  test: {
+    include: ["tests/**/*.test.ts", "scripts/**/*.test.ts"],
+    testTimeout: 30000,
+  },
 });

@@ -33,7 +33,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: mkdir -p test-results && pnpm lint && pnpm typecheck && pnpm test | tee test-results/unit.txt
       - run: pnpm cores:download
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env: { GH_TOKEN: "${{ github.token }}", WITH_CADDY: "1" }
       - working-directory: fq
         run: go test -race -v ./... | tee ../test-results/go.txt
         env:
@@ -128,4 +128,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
+
 

@@ -15,7 +15,9 @@ import {
 export default function WorkWindow({ type, id }: { type: string; id: string }) {
   const { data, call, resolvedTheme } = useApp();
   const xterm = useRef<Terminal | null>(null);
+  const themeRef = useRef(resolvedTheme);
   useEffect(() => {
+    themeRef.current = resolvedTheme;
     if (xterm.current)
       xterm.current.options.theme = terminalTheme(resolvedTheme);
   }, [resolvedTheme]);
@@ -30,9 +32,7 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "Menlo, Monaco, monospace",
-      theme: terminalTheme(
-        document.documentElement.classList.contains("dark") ? "dark" : "light",
-      ),
+      theme: terminalTheme(themeRef.current),
     });
     xterm.current = terminal;
     const fit = new FitAddon();

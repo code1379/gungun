@@ -70,7 +70,22 @@ try {
   );
   if (!open.ok) throw new Error(open.error);
   const terminal = await opened;
-  await expect(terminal.locator(".xterm-viewport")).toBeVisible();
+  // xterm 6 applies its live theme to the scrollable element. The legacy
+  // .xterm-viewport retains a black background independently of that theme.
+  const terminalSurface = terminal.locator(".xterm-scrollable-element");
+  await expect(terminalSurface).toBeVisible();
+  await expect
+    .poll(async () => {
+      const theme = await terminal.locator("html").getAttribute("data-theme");
+      const background = await terminalSurface.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      return (
+        background ===
+        (theme === "dark" ? "rgb(23, 25, 28)" : "rgb(247, 248, 250)")
+      );
+    })
+    .toBe(true);
   await expect.poll(() => ssh.shells).toBe(1);
   await terminal.evaluate(() => {
     window.smokeTerminalOutput = "";
@@ -115,7 +130,7 @@ try {
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(terminal.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(terminal.locator(".xterm-viewport")).toHaveCSS(
+  await expect(terminalSurface).toHaveCSS(
     "background-color",
     "rgb(23, 25, 28)",
   );
@@ -131,7 +146,7 @@ try {
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await expect(terminal.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(terminal.locator(".xterm-viewport")).toHaveCSS(
+  await expect(terminalSurface).toHaveCSS(
     "background-color",
     "rgb(247, 248, 250)",
   );
