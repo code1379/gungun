@@ -449,13 +449,34 @@ export class API {
       }
       case "export": {
         const q = z
-          .object({ tagId: id, format: z.enum(["mihomo", "base64"]) })
+          .object({
+            tagId: id,
+            format: z.enum(["mihomo", "base64"]),
+            subjectIds: z
+              .array(id)
+              .min(1)
+              .max(10000)
+              .refine((ids) => new Set(ids).size === ids.length, "所选项目不能重复")
+              .optional(),
+          })
           .parse(input);
-        const chains = q.tagId === "chains" ? s.all<Chain>("chains") : [];
-        const nodes =
+        let chains = q.tagId === "chains" ? s.all<Chain>("chains") : [];
+        let nodes =
           q.tagId === "chains"
             ? s.all<ProxyNode>("nodes")
             : resolveTag(q.tagId, s.all("nodes"), s.all("tags"));
+        if (q.subjectIds) {
+          const selectedIds = new Set(q.subjectIds);
+          if (q.tagId === "chains") {
+            chains = chains.filter((chain) => selectedIds.has(chain.id));
+            if (chains.length !== selectedIds.size)
+              throw new Error("所选代理链已发生变化，请重新选择");
+          } else {
+            nodes = nodes.filter((node) => selectedIds.has(node.id));
+            if (nodes.length !== selectedIds.size)
+              throw new Error("所选节点已发生变化，请重新选择");
+          }
+        }
         const content =
           q.format === "mihomo"
             ? exportMihomo(nodes, chains)

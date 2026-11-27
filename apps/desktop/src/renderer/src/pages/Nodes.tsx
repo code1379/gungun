@@ -17,6 +17,7 @@ export default function Nodes() {
   const [sourceIds, setSourceIds] = useState(["local"]);
   const [displaySource, setDisplaySource] = useState("local");
   const [selected, setSelected] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "latency" | "speed">("name");
   const [editing, setEditing] = useState<ProxyNode | null>(null);
@@ -57,6 +58,16 @@ export default function Nodes() {
           : (result(b.id)?.speedMBps ?? -1) - (result(a.id)?.speedMBps ?? -1),
     );
   const currentTag = data.tags.find((t) => t.id === tagId);
+  const selectedCount = subjects.filter((subject) =>
+    selectedIds.includes(subject.id),
+  ).length;
+  const allSelected = subjects.length > 0 && selectedCount === subjects.length;
+  const partialSelection = selectedCount > 0 && !allSelected;
+  const batchSubjectIds = partialSelection
+    ? subjects
+        .filter((subject) => selectedIds.includes(subject.id))
+        .map((subject) => subject.id)
+    : undefined;
   const test = (speed: boolean, subjectIds?: string[]) =>
     run(
       () => call("test", { tagId, sourceIds, speed, subjectIds }),
@@ -132,7 +143,16 @@ export default function Nodes() {
           </>
         }
       />
-      <Tabs value={tagId} onValueChange={(value) => { setTagId(String(value)); setSelected(""); }} orientation="vertical" className="nodes-layout">
+      <Tabs
+        value={tagId}
+        onValueChange={(value) => {
+          setTagId(String(value));
+          setSelected("");
+          setSelectedIds([]);
+        }}
+        orientation="vertical"
+        className="nodes-layout"
+      >
         <aside className="nodes-groups-panel">
           <div className="nodes-groups-heading">分组</div>
           <TabsList variant="default" className="node-groups-list" aria-label="节点分组">
@@ -173,7 +193,7 @@ export default function Nodes() {
         <div className="actions">
           <Button
             onClick={() => {
-              void test(false);
+              void test(false, batchSubjectIds);
             }}
             disabled={!subjects.length}
           >
@@ -182,7 +202,7 @@ export default function Nodes() {
           </Button>
           <Button
             onClick={() => {
-              void test(true);
+              void test(true, batchSubjectIds);
             }}
             disabled={!subjects.length}
           >
@@ -191,7 +211,9 @@ export default function Nodes() {
           </Button>
         </div>
         <span className="muted">
-          当前 Tag · {subjects.length} 项 · 并发 {data.settings.concurrency}
+          {partialSelection
+            ? `已选 ${selectedCount} / ${subjects.length} 项`
+            : `当前 Tag · ${subjects.length} 项`} · 并发 {data.settings.concurrency}
         </span>
       </div>
       <div className="source-toolbar">
@@ -275,7 +297,7 @@ export default function Nodes() {
         <Button
           onClick={() => {
             void run(
-              () => call("export", { tagId, format: "mihomo" }),
+              () => call("export", { tagId, format: "mihomo", subjectIds: batchSubjectIds }),
               "已导出 Mihomo YAML",
             );
           }}
@@ -287,7 +309,7 @@ export default function Nodes() {
           <Button
             onClick={() => {
               void run(
-                () => call("export", { tagId, format: "base64" }),
+                () => call("export", { tagId, format: "base64", subjectIds: batchSubjectIds }),
                 "已复制 V2Ray Base64 订阅到剪贴板",
               );
             }}
@@ -301,6 +323,17 @@ export default function Nodes() {
           <Table className="node-table">
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10 text-center">
+                  <Checkbox
+                    aria-label={isChain ? "全选当前链路" : "全选当前分组节点"}
+                    checked={
+                      allSelected ? true : partialSelection ? "indeterminate" : false
+                    }
+                    onCheckedChange={(checked) =>
+                      setSelectedIds(checked ? subjects.map((subject) => subject.id) : [])
+                    }
+                  />
+                </TableHead>
                 <TableHead>节点名称</TableHead>
                 <TableHead>{isChain ? "连接顺序" : "协议 / 地址"}</TableHead>
                 <TableHead>真连接延迟</TableHead>
@@ -311,11 +344,12 @@ export default function Nodes() {
             <TableBody>
               {visible.map((n) => {
                 const r = result(n.id);
+                const checked = selectedIds.includes(n.id);
                 return (
                   <TableRow
                     key={n.id}
-                    data-state={selected === n.id ? "selected" : undefined}
-                    className={selected === n.id ? "bg-primary/10" : ""}
+                    data-state={selected === n.id || checked ? "selected" : undefined}
+                    className={selected === n.id || checked ? "bg-primary/10" : ""}
                     onClick={() => setSelected(n.id)}
                     onDoubleClick={() => setDetails(n.id)}
                     onContextMenu={(e) => {
@@ -328,6 +362,24 @@ export default function Nodes() {
                       });
                     }}
                   >
+                    <TableCell
+                      className="w-10 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        aria-label={`选择 ${n.name}`}
+                        checked={checked}
+                        onCheckedChange={(value) =>
+                          setSelectedIds((current) =>
+                            value
+                              ? current.includes(n.id)
+                                ? current
+                                : [...current, n.id]
+                              : current.filter((id) => id !== n.id),
+                          )
+                        }
+                      />
+                    </TableCell>
                     <TableCell>
                       <strong>{n.name}</strong>
                       {"nodeIds" in n ? (
