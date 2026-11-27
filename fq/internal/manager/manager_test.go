@@ -135,6 +135,8 @@ func TestVlessWSAccessModesShareOneInbound(t *testing.T) {
 		if in["type"] == "vless" { count++; if in["listen_port"] != 45516 || in["tls"] == nil { t.Fatalf("unexpected shared VLESS inbound: %#v", in) } }
 	}
 	if count != 1 { t.Fatalf("VLESS inbound count = %d, want 1", count) }
+	s.Services[1].PublicPort = 18880
+	if err := s.Normalize(); err == nil { t.Fatal("VLESS WS CDN and direct must share one public mapping") }
 	nodes := Export(s)["nodes"].([]any)
 	var cdnNode M
 	for _, value := range nodes { node := value.(M); if node["access"] == "cdn" { cdnNode = node } }
