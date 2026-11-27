@@ -128,7 +128,11 @@ export class Cloudflare {
   async tunnelConfig(
     account: string,
     id: string,
-    ingress: { hostname?: string; service: string }[],
+    ingress: {
+      hostname?: string;
+      service: string;
+      originRequest?: { originServerName?: string; noTLSVerify?: boolean };
+    }[],
   ) {
     const path = `/accounts/${account}/cfd_tunnel/${id}/configurations`;
     let before: { config?: unknown } = {};
