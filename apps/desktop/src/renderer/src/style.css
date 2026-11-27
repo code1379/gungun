@@ -736,6 +736,32 @@
     border-color: light-dark(#aec4e0, #3c506e);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
   }
+  .deploy-step-panel {
+    margin-bottom: 18px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .deploy-step-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-top: 12px;
+  }
+  .deploy-inline-error,
+  .deploy-inline-warning,
+  .deploy-inline-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .deploy-inline-error { color: var(--danger); }
+  .deploy-inline-warning { color: var(--warning, #b7791f); }
+  .deploy-inline-info { color: var(--muted-foreground); }
   .zone-binding-panel {
     margin-bottom: 20px;
     padding: 16px;

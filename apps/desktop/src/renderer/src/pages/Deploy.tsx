@@ -171,6 +171,35 @@ export default function Deploy() {
           </aside>
           <section className="deploy-form">
             {vps && (
+              <section className="deploy-step-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>第一步 · 检查并初始化 fq</h2>
+                    <p>检测 VPS 上的 fq 是否可用；安装不完整时可以重新安装或修复。</p>
+                  </div>
+                  <Badge tone={remoteStatus === "ready" ? "good" : remoteStatus === "error" ? "bad" : "neutral"}>
+                    {remoteStatus === "ready" ? "fq 可用" : remoteStatus === "loading" ? "检测中" : remoteStatus === "missing-fq" ? "未安装" : remoteStatus === "error" ? "检测失败" : "未检测"}
+                  </Badge>
+                </div>
+                <div className="deploy-step-actions">
+                  <Button loading={remoteStatus === "loading"} disabled={remoteStatus === "loading" || installingFq} onClick={() => readRemote(vps.id)}>检测 fq</Button>
+                  <Button variant="outline" loading={installingFq} disabled={installingFq} onClick={() => {
+                    void run(async () => {
+                      const taskId = await call<string>("installFq", vps.id);
+                      setInstallTaskId(taskId);
+                      setInstallingFq(true);
+                    }, "fq 安装 / 修复任务已加入任务中心");
+                  }}>
+                    <RefreshCw size={14} />
+                    {remoteStatus === "ready" ? "重装 / 修复 fq" : "安装 fq"}
+                  </Button>
+                </div>
+                {remoteStatus === "error" && <p className="deploy-inline-error"><AlertCircle size={14} />{remoteError}</p>}
+                {remoteStatus === "missing-fq" && <p className="deploy-inline-warning">未检测到 fq，请先安装后再进行域名与协议配置。</p>}
+                {installTaskId && <p className="deploy-inline-info">安装任务正在任务中心执行，完成后会自动重新检测。</p>}
+              </section>
+            )}
+            {vps && (
               <section className="zone-binding-panel">
                 <div className="section-heading">
                   <div>
