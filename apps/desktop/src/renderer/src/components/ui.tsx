@@ -181,6 +181,40 @@ export function Field({
     </div>
   );
 }
+export function HelpTip({
+  label = "操作说明",
+  title,
+  description,
+  steps,
+}: {
+  label?: string;
+  title: string;
+  description: string;
+  steps?: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-5 rounded-full p-0 text-muted-foreground hover:text-foreground"
+        aria-label={label}
+        onClick={() => setOpen(true)}
+      >
+        <CircleHelp size={15} />
+      </Button>
+      <Modal open={open} onClose={() => setOpen(false)} title={title} description={description}>
+        {steps?.length ? (
+          <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed">
+            {steps.map((step, index) => <li key={index}>{step}</li>)}
+          </ol>
+        ) : null}
+      </Modal>
+    </>
+  );
+}
 export function Empty({
   title,
   children,
@@ -216,8 +250,8 @@ export function PageHeader({
 }) {
   return (
     <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
-      <div className="flex min-w-0 items-start gap-3">
-        {leading && <div className="shrink-0 pt-0.5">{leading}</div>}
+      <div className="flex min-w-0 flex-col items-start gap-2">
+        {leading && <div className="mb-1">{leading}</div>}
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             {title}

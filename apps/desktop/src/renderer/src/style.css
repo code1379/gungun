@@ -29,7 +29,7 @@
   --sidebar-foreground: var(--foreground);
   --sidebar-accent: light-dark(#e0e6ee, #272c33);
   --sidebar-accent-foreground: var(--foreground);
-  --good: light-dark(#28734e, #97c9b1);
+  --good: light-dark(#15803d, #4ade80);
   --canvas: var(--background);
   --surface: var(--card);
   --surface-high: var(--secondary);
@@ -755,16 +755,16 @@
   }
   .ssh-status-dot {
     display: inline-block;
-    width: 8px;
-    height: 8px;
-    flex: 0 0 8px;
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
     border-radius: 999px;
-    background: var(--muted-foreground);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--muted-foreground) 14%, transparent);
+    background: #8b929c;
+    box-shadow: 0 0 0 2px color-mix(in srgb, #8b929c 16%, transparent);
   }
   .ssh-status-dot.connected {
-    background: var(--good);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 18%, transparent);
+    background: light-dark(#16a34a, #4ade80);
+    box-shadow: 0 0 0 3px light-dark(rgb(22 163 74 / 18%), rgb(74 222 128 / 20%));
   }
   .ssh-status-dot.failed {
     background: var(--danger);
@@ -789,6 +789,21 @@
     font-size: 12px;
     font-weight: 600;
   }
+  .node-group-icon {
+    display: inline-flex;
+    width: 18px;
+    min-width: 18px;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted-foreground);
+  }
+  .node-group-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .node-groups-list {
     display: flex;
     width: 100%;
@@ -803,19 +818,38 @@
     width: 100%;
     min-height: 39px;
     height: auto;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 9px;
     padding: 8px 10px;
     border-radius: 7px;
     text-align: left;
   }
   .node-group-count {
     min-width: 25px;
+    flex: 0 0 auto;
+    margin-left: auto;
     padding: 2px 7px;
     border-radius: 999px;
     background: var(--secondary);
     color: var(--muted-foreground);
     font-size: 10px;
     text-align: center;
+  }
+  .namespace-detail {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 9px;
+  }
+  .namespace-code {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--foreground);
+    font: 12px/1.5 Menlo, Monaco, monospace;
   }
   .nodes-main {
     min-width: 0;

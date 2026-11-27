@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
 import { VPS } from "@gungun/domain";
 import { errorText, useApp } from "../api";
-import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
+import { Badge, Button, Confirm, Empty, Field, HelpTip, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
 export default function Vps() {
   const { data, call, run } = useApp();
   const [editing, setEditing] = useState<VPS | null>(null);
@@ -161,16 +161,28 @@ export default function Vps() {
               <RefreshCw size={15} />
               手动同步节点
             </Button>
-            <Button
-              loading={pendingAction === "status"}
-              disabled={pendingAction !== null}
-              onClick={() => runAction("status", async () => {
-                setDetail(await call("remoteRead", { vpsId: current.id, action: "status" }));
-                setDetailLabel("远程状态检查结果");
-              })}
-            >
-              检查状态
-            </Button>
+            <div className="inline-flex items-center gap-1">
+              <Button
+                loading={pendingAction === "status"}
+                disabled={pendingAction !== null}
+                onClick={() => runAction("status", async () => {
+                  setDetail(await call("remoteRead", { vpsId: current.id, action: "status" }));
+                  setDetailLabel("远程服务状态检查结果");
+                })}
+              >
+                检查远程服务状态
+              </Button>
+              <HelpTip
+                label="检查远程服务状态说明"
+                title="检查远程服务状态"
+                description="通过 SSH 在 VPS 上执行 fq status，读取 Gungun 管理的远程服务运行状态。这不是 SSH 连通性测试。"
+                steps={[
+                  "检查 gungun-sing-box、gungun-caddy、gungun-tunnel 和 warp-svc 的 systemd active 状态。",
+                  "如果服务器安装了 Tailscale，还会尝试读取服务器端 Tailscale 状态。",
+                  "如果你只想确认 SSH 是否能连接，请在添加或编辑 VPS 窗口中使用「测试连接」。",
+                ]}
+              />
+            </div>
             <Button
               loading={pendingAction === "ssh-config"}
               disabled={pendingAction !== null}
@@ -195,11 +207,14 @@ export default function Vps() {
             <dd>
               {data.vps.find((v) => v.id === current.jumpId)?.name || "无"}
             </dd>
-            <dt>域名空间</dt>
-            <dd>
-              {current.zoneName
-                ? `${current.namespace}.${current.zoneName}`
-                : `${current.namespace}（尚未绑定域名）`}
+            <dt>独立域名空间标识</dt>
+            <dd className="namespace-detail">
+              <code className="namespace-code">{current.namespace}</code>
+              <span className="muted">
+                {current.zoneName
+                  ? `绑定 Zone：${current.zoneName}`
+                  : "尚未绑定 Cloudflare Zone"}
+              </span>
             </dd>
             <dt>Tunnel</dt>
             <dd>{current.tunnelId || "部署 Argo 时创建"}</dd>
@@ -250,7 +265,7 @@ export default function Vps() {
                   {v.address ? `${v.address}:${v.sshPort}` : "尚未填写服务器地址"}
                 </p>
                 <p className="muted">
-                  域名空间：{v.namespace}{v.zoneName ? `.${v.zoneName}` : ""}
+                  独立域名空间：{v.namespace}{v.zoneName ? `.${v.zoneName}` : ""}
                 </p>
               </div>
               {v.jumpId && (
@@ -454,6 +469,16 @@ export default function Vps() {
                   />
                   使用 Tailscale 地址连接
                 </label>
+              </Field>
+              <Field
+                label="独立域名空间标识"
+                hint="创建 VPS 时自动生成的 5 位随机标识，用于拼接 node.xxx.example.com 等服务域名；保存后固定，不需要手动填写。"
+                help={{
+                  title: "独立域名空间标识",
+                  description: "Gungun 在打开「添加 VPS」表单时自动生成 5 位随机字符，例如 s2cp2。保存后该标识固定，用于区分不同 VPS 的自动生成域名。",
+                }}
+              >
+                <Input value={editing.namespace} readOnly />
               </Field>
             </div>
             <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-popover py-3 vps-form-actions">
