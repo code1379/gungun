@@ -67,6 +67,115 @@ export default function Help() {
           </section>
         ))}
       </div>
+
+      <section className="section mt-4 flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <Network size={18} />
+          <h2>Cloudflare CDN：Edge、Origin Rule 与 NAT 端口</h2>
+        </div>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          这三个端口属于不同网络层。Cloudflare Edge 接收客户端请求；Origin Rule
+          只负责把请求转到 VPS 的公网映射端口；NAT 服务商再把公网端口转发到 VPS
+          内部 sing-box 的实际监听端口。
+        </p>
+
+        <div className="rounded-xl border border-border bg-muted/20 p-4">
+          <div className="mx-auto flex max-w-xl flex-col items-center gap-2 text-center">
+            <div className="w-full rounded-lg border border-border bg-card p-3">
+              <strong className="block text-sm">客户端</strong>
+              <strong className="mt-1 block text-lg">HTTPS :2053</strong>
+              <span className="text-xs text-muted-foreground">Cloudflare Edge 端口</span>
+            </div>
+            <span className="text-muted-foreground">↓</span>
+            <span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-600 dark:text-sky-400">
+              Origin Rule：目标端口改为 18880
+            </span>
+            <span className="text-muted-foreground">↓</span>
+            <div className="w-full rounded-lg border border-border bg-card p-3">
+              <strong className="block text-sm">VPS 公网映射</strong>
+              <strong className="mt-1 block text-lg">:18880</strong>
+              <span className="text-xs text-muted-foreground">NAT 服务商分配的公网端口</span>
+            </div>
+            <span className="text-muted-foreground">↓</span>
+            <span className="text-xs text-muted-foreground">NAT 端口转发：18880 → 45516</span>
+            <span className="text-muted-foreground">↓</span>
+            <div className="w-full rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3">
+              <strong className="block text-sm">VPS 内部 sing-box</strong>
+              <strong className="mt-1 block text-lg text-emerald-600 dark:text-emerald-400">:45516</strong>
+              <span className="text-xs text-muted-foreground">实际监听端口</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-border p-3">
+            <strong className="text-sm">Edge 端口</strong>
+            <p className="mt-1 text-sm text-muted-foreground">客户端访问 Cloudflare 使用的端口，例如 HTTPS 2053 或 HTTP 8080。</p>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <strong className="text-sm">公网映射端口</strong>
+            <p className="mt-1 text-sm text-muted-foreground">Cloudflare 回源到 VPS 公网时使用的端口。NAT VPS 由服务商映射分配。</p>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <strong className="text-sm">内部监听端口</strong>
+            <p className="mt-1 text-sm text-muted-foreground">sing-box 在 VPS 内部真正监听的端口。NAT 转发最终到达这里。</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-2 pr-3 font-medium">配置项</th>
+                <th className="py-2 font-medium">默认值或行为</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-border"><td className="py-2 pr-3">Cloudflare Edge</td><td className="py-2">HTTPS 默认 443；HTTP 默认 80</td></tr>
+              <tr className="border-b border-border"><td className="py-2 pr-3">内部监听端口</td><td className="py-2">用户填写，例如 45516</td></tr>
+              <tr className="border-b border-border"><td className="py-2 pr-3">公网映射端口</td><td className="py-2">默认等于内部端口；NAT 不同时开启单独填写</td></tr>
+              <tr className="border-b border-border"><td className="py-2 pr-3">Origin Rule</td><td className="py-2">Edge 端口与公网映射端口不同时，目标端口改为公网映射端口</td></tr>
+              <tr><td className="py-2 pr-3">NAT 转发</td><td className="py-2">由服务商将公网映射端口转发到内部监听端口</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="rounded-lg border border-border p-3">
+          <strong className="text-sm">Origin Rule 判断条件</strong>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Edge 端口与 VPS 公网映射端口相同：不创建端口覆盖规则。</li>
+            <li>Edge 端口与 VPS 公网映射端口不同：自动创建 Origin Rule，目标端口指向 VPS 公网映射端口。</li>
+            <li>NAT 内部端口转换由 NAT 服务商处理；Cloudflare 不直接访问 VPS 内部端口。</li>
+          </ul>
+        </div>
+
+        <div className="rounded-lg border border-border p-3">
+          <strong className="text-sm">HTTP / HTTPS 与端口选择</strong>
+          <p className="mt-1 text-sm text-muted-foreground">
+            这里选择的是客户端到 Cloudflare 的协议，不改变 VPS 内部监听端口。HTTPS 默认 443，
+            HTTP 默认 80；切换协议时 Gungun 会同步切换默认 Edge 端口。
+            HTTP 模式下，VPS 源站仍由 Gungun 配置 TLS 监听，Cloudflare Zone 的 SSL/TLS
+            模式应配置为 Full 或 Full (strict)，不要用 Flexible 代替源站 HTTPS。
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <p className="text-sm"><strong>HTTP：</strong><span className="text-muted-foreground">80、8080、8880、2052、2082、2086、2095</span></p>
+            <p className="text-sm"><strong>HTTPS：</strong><span className="text-muted-foreground">443、2053、2083、2087、2096、8443</span></p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => {
+            void run(() => call("openExternal", "https://developers.cloudflare.com/fundamentals/reference/network-ports/"), "已打开 Cloudflare 支持端口文档");
+          }}>
+            <ExternalLink size={14} /> Cloudflare 支持端口
+          </Button>
+          <Button type="button" variant="outline" onClick={() => {
+            void run(() => call("openExternal", "https://developers.cloudflare.com/rules/origin-rules/"), "已打开 Cloudflare Origin Rules 文档");
+          }}>
+            <ExternalLink size={14} /> Cloudflare Origin Rules
+          </Button>
+        </div>
+      </section>
     </>
   );
 }
