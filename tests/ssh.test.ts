@@ -95,6 +95,7 @@ beforeAll(async () => {
     id: randomUUID(),
     name: "jump",
     sshPort: (jump.address() as net.AddressInfo).port,
+    namespace: "b9k3m",
   };
   store.saveVps(jumpVps);
   store.saveVps(target);

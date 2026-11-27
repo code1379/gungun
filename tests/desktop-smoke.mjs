@@ -48,11 +48,12 @@ try {
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByLabel("名称", { exact: true }).fill("Smoke NAT");
   await choose("主机类型", /^NAT/);
-  await page.getByLabel("SSH 地址", { exact: true }).fill("127.0.0.1");
+  await page.getByLabel("服务器地址", { exact: true }).fill("127.0.0.1");
   await page.getByLabel("SSH 端口", { exact: true }).fill(String(ssh.port));
   await choose("认证方式", "密码");
   await page.getByLabel("密码", { exact: true }).fill(ssh.password);
-  await page.getByLabel("公网地址", { exact: true }).fill("203.0.113.7");
+  await page.getByRole("checkbox", { name: "与服务器地址相同" }).uncheck();
+  await page.getByPlaceholder("例如 NAT 映射公网 IP").fill("203.0.113.7");
   await page.getByRole("button", { name: "保存 VPS", exact: true }).click();
   await expect(page.getByRole("button", { name: /Smoke NAT/ })).toBeVisible();
   const source = await page.evaluate(() => window.gungun.invoke("snapshot"));
