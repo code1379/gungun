@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 
 const require = createRequire(resolve("apps/desktop/package.json"));
-const packagePath = require.resolve("electron/package.json");
-const installScript = join(dirname(packagePath), "install.js");
+const electronEntry = require.resolve("electron");
+const installScript = join(dirname(electronEntry), "install.js");
 const proxy =
   process.env.HTTPS_PROXY ||
   process.env.HTTP_PROXY ||
