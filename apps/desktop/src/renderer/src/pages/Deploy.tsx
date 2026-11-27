@@ -19,6 +19,7 @@ const defaults: Service = {
   realityServer: "www.microsoft.com",
   realityPort: 443,
 };
+type ServicePortConfig = { port: number; publicPort: number };
 const protocolIds = Object.keys(protocolLabels) as Service["protocol"][];
 const protocolDescriptions: Record<Service["protocol"], string> = {
   hysteria2: "Hysteria2 使用独立密码和 TLS 证书，适合 UDP 高性能传输。",
@@ -37,7 +38,7 @@ function readServiceSelections(state: RemoteState) {
   const configs = createServiceConfigMap();
   for (const protocol of protocolIds) {
     const matches = state.services.filter((item) => item.protocol === protocol);
-    const preferred = matches.find((item) => item.access === "direct") || matches[0];
+    const preferred = matches.find((item) => item.access === "direct") || matches.find((item) => item.access === "cdn") || matches[0];
     if (preferred) configs[protocol] = { ...configs[protocol], ...preferred };
   }
   const modes = state.services.filter((item) => item.protocol === "vless-ws").map((item) => item.access);
@@ -46,13 +47,14 @@ function readServiceSelections(state: RemoteState) {
     protocols: [...new Set(state.services.map((item) => item.protocol))],
     accessModes: modes.length ? [...new Set(modes)] : ["direct" as const],
     customDomains: Object.fromEntries(state.services.map((item) => [[item.protocol, item.access].join(":"), item.domain])) as Record<string, string>,
+    portAssignments: Object.fromEntries(state.services.map((item) => [[item.protocol, item.access].join(":"), { port: item.port, publicPort: item.publicPort }])) as Record<string, ServicePortConfig>,
   };
 }
 export default function Deploy() {
   const { data, call, run } = useApp();
   const [vpsId, setVpsId] = useState("");
   const [serviceConfigs, setServiceConfigs] = useState<Record<Service["protocol"], Service>>(() => createServiceConfigMap());
-  const [commonPorts, setCommonPorts] = useState({ internal: 0, public: 0 });
+  const [portAssignments, setPortAssignments] = useState<Record<string, ServicePortConfig>>({});
   const [selectedProtocols, setSelectedProtocols] = useState<Service["protocol"][]>(["hysteria2"]);
   const [accessModes, setAccessModes] = useState<Service["access"][]>(["direct"]);
   const [customDomains, setCustomDomains] = useState<Record<string, string>>({});
@@ -86,6 +88,8 @@ export default function Deploy() {
         if (selections.protocols.length) setSelectedProtocols(selections.protocols);
         setAccessModes(selections.accessModes);
         setCustomDomains(selections.customDomains);
+        setPortAssignments(selections.portAssignments);
+        setPortAssignments(selections.portAssignments);
       })
       .catch((error) => {
         const message = String(error);
@@ -102,6 +106,13 @@ export default function Deploy() {
   const selectedZone = zones.find((zone) => zone.id === zoneId);
   const updateService = <K extends keyof Service,>(protocol: Service["protocol"], key: K, value: Service[K]) =>
     setServiceConfigs((current) => ({ ...current, [protocol]: { ...current[protocol], [key]: value } }));
+  const updatePort = (protocol: Service["protocol"], access: Service["access"], key: keyof ServicePortConfig, value: number) => {
+    const id = [protocol, access].join(":");
+    setPortAssignments((current) => ({
+      ...current,
+      [id]: { port: 0, publicPort: 0, ...current[id], [key]: value },
+    }));
+  };
   const selectedCombinations = selectedProtocols.flatMap((protocol) =>
     (protocol === "vless-ws" ? accessModes : ["direct" as const]).map((access) => ({ protocol, access })),
   );
@@ -137,7 +148,7 @@ export default function Deploy() {
     setZoneStatus(host?.zoneId ? "success" : "idle");
     setZoneMessage(host?.zoneName ? `当前绑定：${host.zoneName}` : "");
     setServiceConfigs(createServiceConfigMap());
-    setCommonPorts({ internal: 0, public: 0 });
+    setPortAssignments({});
     setSelectedProtocols(["hysteria2"]);
     setAccessModes(["direct"]);
     setCustomDomains({});
@@ -339,20 +350,19 @@ export default function Deploy() {
                         accountId: selectedZone.account.id,
                       });
                     }
-                    if (vps.kind === "nat" && (!commonPorts.internal || (selectedCombinations.some(({ access }) => access !== "argo") && !commonPorts.public))) throw new Error("NAT VPS 请填写内部监听端口起始值，以及非 Argo 服务所需的公网映射端口起始值");
                     const occupied = new Set([...(remote?.services || []).map((item) => item.port), ...(remote?.websites || []).map((item) => item.port)]);
                     const zoneName = selectedZone?.name || vps.zoneName;
-                    const services = selectedCombinations.map(({ protocol, access }, index) => {
+                    const services = selectedCombinations.map(({ protocol, access }) => {
                       const config = serviceConfigs[protocol];
                       const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
-                      let port = existing?.port || 0;
-                      if (!port && vps.kind === "nat") {
-                        port = Number(commonPorts.internal) + index;
-                        while (occupied.has(port) && port < 65535) port++;
-                        if (port > 65535) throw new Error("内部监听端口超出 65535");
-                      }
+                      const assignment = portAssignments[[protocol, access].join(":")];
+                      let port = existing?.port || assignment?.port || 0;
+                      if (!port && vps.kind === "nat") throw new Error(protocolLabels[protocol] + " / " + access + "：请填写独立的内部监听端口");
+                      if (!port && vps.kind === "public") port = 0;
+                      if (port && occupied.has(port) && !existing) throw new Error(protocolLabels[protocol] + " / " + access + "：内部端口 " + port + " 已被占用");
                       if (port) occupied.add(port);
-                      const publicPort = existing?.publicPort ?? (access === "argo" ? 0 : vps.kind === "nat" ? Number(commonPorts.public) + index : 0);
+                      const publicPort = access === "argo" ? 0 : (existing?.publicPort || assignment?.publicPort || 0);
+                      if (vps.kind === "nat" && access !== "argo" && !publicPort) throw new Error(protocolLabels[protocol] + " / " + access + "：请填写独立的公网映射端口");
                       const prefix = protocolDomainPrefix[protocol] + "-" + access;
                       const generatedDomain = zoneName ? prefix + "." + vps.namespace + "." + zoneName : "";
                       const customDomain = customDomains[[protocol, access].join(":")] ?? existing?.domain ?? "";
@@ -379,17 +389,6 @@ export default function Deploy() {
                     </label>;
                   })}
                 </div>
-                <section className="common-settings-panel">
-                  <div className="section-heading"><div><h3>通用配置</h3><p>新服务按所选顺序递增分配端口；已部署服务保留原端口。</p></div></div>
-                  <div className="form-grid">
-                    <Field label="内部监听端口起始值" hint={vps.kind === "nat" ? "NAT VPS 必填，每个新服务依次分配。" : "公网 VPS 填 0 时由系统自动分配。"}>
-                      <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={commonPorts.internal} onChange={(e) => setCommonPorts((current) => ({ ...current, internal: Number(e.target.value) }))} />
-                    </Field>
-                    {vps.kind === "nat" && <Field label="公网映射端口起始值" hint="NAT VPS 必填，Argo 入口不占用公网映射端口。">
-                      <Input type="number" min={1} max={65535} value={commonPorts.public} onChange={(e) => setCommonPorts((current) => ({ ...current, public: Number(e.target.value) }))} />
-                    </Field>}
-                  </div>
-                </section>
                 <div className="protocol-settings-list">
                   {selectedProtocols.map((protocol) => {
                     const config = serviceConfigs[protocol];
@@ -399,30 +398,42 @@ export default function Deploy() {
                     const usesUUID = ["tuic", "vless-ws", "vless-reality"].includes(protocol);
                     return <section className="protocol-settings-card" key={protocol}>
                       <div className="section-heading"><div><h3>{protocolLabels[protocol]} 设置</h3><p>{protocolDescriptions[protocol]}</p></div><Badge tone="blue">已选择</Badge></div>
-                      {protocol === "vless-ws" && <section className="access-mode-panel">
-                        <div className="section-heading"><div><h3>接入方式</h3><p>可同时启用直连、Cloudflare CDN 和 Argo Tunnel。</p></div><Badge tone="blue">多选</Badge></div>
-                        <div className="access-mode-options">{(["direct", "cdn", "argo"] as const).map((access) => <label key={access} className={"access-mode-choice " + (accessModes.includes(access) ? "active" : "")}>
-                          <Checkbox checked={accessModes.includes(access)} onCheckedChange={(checked) => setAccessModes((current) => checked ? [...current, access] : current.filter((item) => item !== access))} />
-                          <span>{access === "direct" ? "直连" : access === "cdn" ? "Cloudflare CDN" : "Argo Tunnel"}</span>
-                        </label>)}</div>
-                      </section>}
                       <div className="form-grid">
                         <Field label="协议出站"><Select value={config.egress} onValueChange={(value) => updateService(protocol, "egress", value as Service["egress"])}><option value="DIRECT">DIRECT</option><option value="WARP">WARP</option></Select></Field>
                         {usesPassword && <Field label={protocol === "snell" ? "PSK" : "密码"} hint="留空由 fq 为此协议生成随机凭据。"><Input type="password" autoComplete="off" value={config.password} onChange={(e) => updateService(protocol, "password", e.target.value)} /></Field>}
                         {usesUUID && <Field label="UUID" hint="留空自动生成；同一协议的不同接入方式共用此 UUID。"><Input value={config.uuid} onChange={(e) => updateService(protocol, "uuid", e.target.value)} /></Field>}
                         {protocol === "vless-ws" && <Field label="WebSocket 路径"><Input value={config.path} onChange={(e) => updateService(protocol, "path", e.target.value)} /></Field>}
-                        {protocol === "vless-ws" && accessModes.includes("cdn") && <Field label="Cloudflare Edge HTTPS 端口"><Select value={String(config.edgePort)} onValueChange={(value) => updateService(protocol, "edgePort", Number(value))}>{[443, 2053, 2083, 2087, 2096, 8443].map((port) => <option key={port} value={port}>{port}</option>)}</Select></Field>}
                         {protocol === "vless-reality" && <Field label="Reality 握手目标"><Input required value={config.realityServer} onChange={(e) => updateService(protocol, "realityServer", e.target.value)} /></Field>}
                         {protocol === "vless-reality" && <Field label="Reality 握手端口"><Input type="number" min={1} max={65535} value={config.realityPort} onChange={(e) => updateService(protocol, "realityPort", Number(e.target.value))} /></Field>}
-                        {vps.zoneId && vps.zoneName && needsDomain && accesses.map((access) => {
+                      </div>
+                      <div className="service-access-config-list">
+                        {accesses.map((access) => {
                           const key = [protocol, access].join(":");
-                          const suggested = protocolDomainPrefix[protocol] + "-" + access + "." + vps.namespace + "." + vps.zoneName;
-                          return <Field key={key} label={(access === "direct" ? "直连" : access === "cdn" ? "CDN" : "Argo") + " 域名（可选）"} hint={"留空自动使用：" + suggested}>
-                            <Input value={customDomains[key] ?? ""} onChange={(e) => setCustomDomains((current) => ({ ...current, [key]: e.target.value }))} placeholder={suggested} />
-                          </Field>;
+                          const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
+                          const assignment = portAssignments[key] || { port: existing?.port || 0, publicPort: existing?.publicPort || 0 };
+                          const accessLabel = access === "direct" ? "直连" : access === "cdn" ? "Cloudflare CDN" : "Argo Tunnel";
+                          const suggested = protocolDomainPrefix[protocol] + "-" + access + "." + vps.namespace + "." + (vps.zoneName || "your-domain");
+                          return <section className="service-access-config" key={key}>
+                            <div className="section-heading"><div><h4>{protocol === "vless-ws" ? accessLabel + "入口" : "监听与映射端口"}</h4>{protocol === "vless-ws" && <p>此入口独立配置监听端口和映射关系。</p>}</div></div>
+                            <div className="form-grid">
+                              <Field label="内部监听端口" hint={vps.kind === "nat" ? "填写此服务在 VPS 内部实际监听的端口。" : "填 0 时由系统自动分配。"}>
+                                <Input type="number" min={vps.kind === "nat" ? 1 : 0} max={65535} value={assignment.port} onChange={(e) => updatePort(protocol, access, "port", Number(e.target.value))} />
+                              </Field>
+                              {vps.kind === "nat" && access !== "argo" && <Field label="公网映射端口" hint="填写服务商分配给此服务的独立公网端口。">
+                                <Input type="number" min={1} max={65535} value={assignment.publicPort} onChange={(e) => updatePort(protocol, access, "publicPort", Number(e.target.value))} />
+                              </Field>}
+                              {vps.kind === "nat" && access === "argo" && <p className="service-port-note">Argo Tunnel 通过隧道转发到内部监听端口，不需要公网映射端口。</p>}
+                              {protocol === "vless-ws" && access === "cdn" && <Field label="Cloudflare Edge HTTPS 端口" hint="这是客户端连接 Cloudflare 使用的端口，与 VPS 公网映射端口不同。">
+                                <Select value={String(config.edgePort)} onValueChange={(value) => updateService(protocol, "edgePort", Number(value))}>{[443, 2053, 2083, 2087, 2096, 8443].map((port) => <option key={port} value={port}>{port}</option>)}</Select>
+                              </Field>}
+                              {vps.zoneId && vps.zoneName && needsDomain && <Field label="域名（可选）" hint={"留空自动使用：" + suggested}>
+                                <Input value={customDomains[key] ?? ""} onChange={(e) => setCustomDomains((current) => ({ ...current, [key]: e.target.value }))} placeholder={suggested} />
+                              </Field>}
+                            </div>
+                          </section>;
                         })}
                       </div>
-                      {protocol === "vless-ws" && accessModes.includes("argo") && <p className="info-note"><Network size={17} />复用此 VPS 的固定 Tunnel，生成 443 TLS 和 80 HTTP 两个客户端节点。VPS 无需开放 80 / 443 入站。</p>}
+                      {protocol === "vless-ws" && accessModes.includes("argo") && <p className="info-note"><Network size={17} />Argo Tunnel 直接转发到上方配置的内部监听端口，不需要公网映射端口。</p>}
                       {config.egress === "WARP" && <p className="info-note"><Shield size={17} />请先在网络服务中安装并连接 WARP。此选项只改变 {protocolLabels[protocol]} 的出站。</p>}
                     </section>;
                   })}
