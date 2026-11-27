@@ -49,10 +49,24 @@ export class TaskCenter {
       task.steps.push({ name, state: "running", at: new Date().toISOString() });
       const index = task.steps.length - 1;
       this.save(task);
+      const reportTransfer: TransferReporter = (transferred, total) => {
+        if (!Number.isFinite(transferred) || !Number.isFinite(total) || total <= 0) return;
+        const safeTotal = Math.max(1, Math.floor(total));
+        const safeTransferred = Math.min(safeTotal, Math.max(0, Math.floor(transferred)));
+        const percent = Math.round((safeTransferred / safeTotal) * 100);
+        task.steps[index].transfer = { transferred: safeTransferred, total: safeTotal, percent };
+        // Upload is one sub-step of the task; reserve the rest of the progress for
+        // installation and verification instead of pretending the whole task is done.
+        task.progress = Math.max(task.progress, Math.min(75, 15 + Math.round(percent * 0.45)));
+        this.save(task);
+      };
       try {
-        const r = await fn();
+        const r = await fn(reportTransfer);
         task.steps[index].state = "success";
-        task.progress = Math.min(95, task.progress + 15);
+        task.steps[index].transfer = task.steps[index].transfer
+          ? { ...task.steps[index].transfer, percent: 100, transferred: task.steps[index].transfer.total }
+          : undefined;
+        task.progress = Math.min(95, Math.max(task.progress, task.progress + 15));
         this.save(task);
         return r;
       } catch (e) {
@@ -94,7 +108,11 @@ export class TaskCenter {
     this.notify();
   }
 }
-export type Step = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+export type TransferReporter = (transferred: number, total: number) => void;
+export type Step = <T>(
+  name: string,
+  fn: (reportTransfer: TransferReporter) => Promise<T>,
+) => Promise<T>;
 export function redact(value: string) {
   return value
     .replace(
