@@ -9,7 +9,11 @@ if (process.platform !== "darwin" || process.arch !== "arm64")
   throw new Error("一键开发环境准备目前支持 macOS Apple Silicon（M 系列芯片）");
 
 function run(script) {
-  execFileSync(process.execPath, [join(root, script)], { cwd: root, stdio: "inherit" });
+  execFileSync(process.execPath, [join(root, script)], {
+    cwd: root,
+    stdio: "inherit",
+    env: { ...process.env, NODE_USE_ENV_PROXY: "1" },
+  });
 }
 
 console.log("[1/2] 准备 Go 并构建 Linux fq amd64 / arm64");
