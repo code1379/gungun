@@ -208,7 +208,7 @@ export const settingsSchema = z.object({
   timeoutMs: z.number().int().min(3000).max(120000).default(20000),
   cloudflareEmail: z.string().default(""),
   cloudflareKey: z.string().default(""),
-  sshKeyPath: z.string().default(""),
+  sshKeyPath: z.string().default("~/.ssh/id_ed25519_gungun"),
   acmeEmail: z.string().default(""),
 });
 export type Settings = z.infer<typeof settingsSchema>;

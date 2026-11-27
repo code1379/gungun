@@ -3,6 +3,11 @@ import { Plus, Globe, Shield, RefreshCw, DatabaseBackup } from "lucide-react";
 import { RemoteState, Website } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, protocolLabels, Select, Input } from "../components/ui";
+interface Zone {
+  id: string;
+  name: string;
+  account: { id: string; name: string };
+}
 export default function Network() {
   const { data, call, run } = useApp();
   const [vpsId, setVpsId] = useState("");
@@ -12,6 +17,8 @@ export default function Network() {
   const [backups, setBackups] = useState<string[]>([]);
   const [backupId, setBackupId] = useState("");
   const [tab, setTab] = useState("services");
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [zoneId, setZoneId] = useState("");
   if (!data) return null;
   const vps = data.vps.find((v) => v.id === vpsId);
   const load = async (id = vpsId) => {
@@ -38,6 +45,7 @@ export default function Network() {
               onValueChange={(value) => {
                 const id = value;
                 setVpsId(id);
+                setZoneId(data.vps.find((v) => v.id === id)?.zoneId || "");
                 setRemote(null);
                 setOutput(null);
                 setBackups([]);
@@ -68,6 +76,7 @@ export default function Network() {
           <div className="tag-bar">
             {[
               { id: "services", name: "协议服务" },
+              { id: "domains", name: "域名管理" },
               { id: "websites", name: "网站与转发" },
               { id: "warp", name: "WARP" },
               { id: "backups", name: "备份与证书" },
@@ -154,6 +163,66 @@ export default function Network() {
                 </Button>
               </div>
             </>
+          )}
+          {tab === "domains" && (
+            <section className="section">
+              <div className="section-heading">
+                <h2>VPS 独立域名空间</h2>
+                <Badge>{vps.namespace}</Badge>
+              </div>
+              <p className="hint">
+                独立标识在创建 VPS 时自动生成并固定。选择 Cloudflare Zone 后，Gungun 会自动组合完整域名；添加 VPS 时不需要配置 Cloudflare。
+              </p>
+              <dl className="details">
+                <dt>独立标识</dt>
+                <dd>{vps.namespace}</dd>
+                <dt>完整域名空间</dt>
+                <dd>{vps.zoneName ? `${vps.namespace}.${vps.zoneName}` : "尚未绑定 Cloudflare Zone"}</dd>
+                <dt>伪装站 / 服务子域名示例</dt>
+                <dd>{vps.zoneName ? `web.${vps.namespace}.${vps.zoneName}` : "绑定 Zone 后自动显示"}</dd>
+              </dl>
+              <Field label="Cloudflare Zone" hint="选择由当前 Cloudflare 账户托管、准备分配给这台 VPS 的域名区域。API 凭据在「设置」中配置。">
+                <div className="input-action">
+                  <Select value={zoneId} onValueChange={setZoneId}>
+                    <option value="">未绑定</option>
+                    {vps.zoneId && !zones.some((z) => z.id === vps.zoneId) && (
+                      <option value={vps.zoneId}>{vps.zoneName || vps.zoneId}</option>
+                    )}
+                    {zones.map((z) => (
+                      <option key={z.id} value={z.id}>{z.name}</option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void run(async () => setZones(await call<Zone[]>("zones")));
+                    }}
+                  >
+                    读取 Zone
+                  </Button>
+                </div>
+              </Field>
+              <div className="toolbar">
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    void run(async () => {
+                      const selectedZone = zones.find((z) => z.id === zoneId);
+                      if (zoneId && !selectedZone && zoneId !== vps.zoneId)
+                        throw new Error("请先读取 Cloudflare Zone，再选择要绑定的域名");
+                      await call("saveVps", {
+                        ...vps,
+                        zoneId,
+                        zoneName: selectedZone?.name || (zoneId === vps.zoneId ? vps.zoneName : ""),
+                        accountId: selectedZone?.account.id || (zoneId === vps.zoneId ? vps.accountId : ""),
+                      });
+                    }, "域名空间配置已保存");
+                  }}
+                >
+                  保存域名配置
+                </Button>
+              </div>
+            </section>
           )}
           {tab === "websites" && (
             <>

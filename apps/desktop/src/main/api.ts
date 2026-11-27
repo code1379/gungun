@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { randomUUID, randomBytes } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { isIP } from "node:net";
 import { dialog } from "electron";
@@ -24,12 +24,22 @@ import {
   type VPS,
 } from "@gungun/domain";
 import type { Store } from "./store";
-import { SSH } from "./ssh";
+import { resolveSSHKeyPath, SSH } from "./ssh";
 import { TaskCenter, pooled, ConcurrencyGate } from "./tasks";
 import { Cloudflare } from "./cloudflare";
 import { Orchestrator } from "./orchestrator";
 import { Benchmark } from "./benchmark";
 const id = z.string().min(1).max(200);
+const DEFAULT_SSH_KEY_PATH = "~/.ssh/id_ed25519_gungun";
+const NAMESPACE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+function createNamespace(existing: Set<string>) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const bytes = randomBytes(5);
+    const value = Array.from(bytes, (byte) => NAMESPACE_ALPHABET[byte % NAMESPACE_ALPHABET.length]).join("");
+    if (!existing.has(value)) return value;
+  }
+  throw new Error("无法生成唯一域名空间标识，请重试");
+}
 export class API {
   private testGate: ConcurrencyGate;
   readonly ssh: SSH;
@@ -68,22 +78,37 @@ export class API {
       case "snapshot":
         return s.snapshot();
       case "newVps":
-        return vpsSchema.parse({
+        return {
           id: randomUUID(),
           name: "新 VPS",
           kind: "public",
-          address: "localhost",
-          publicAddress: "127.0.0.1",
+          address: "",
+          publicAddress: "",
+          sshPort: 22,
           username: "root",
           auth: "key",
-          keyPath:
-            s.settings().sshKeyPath ||
-            join(homedir(), ".ssh", "gungun", "id_ed25519"),
-          namespace: randomBytes(4).toString("hex"),
+          keyPath: s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH,
+          password: "",
+          jumpId: null,
+          tailscale: false,
+          namespace: createNamespace(new Set(s.all<VPS>("vps").map((v) => v.namespace))),
+          zoneId: "",
+          zoneName: "",
+          accountId: "",
+          tunnelId: "",
+        };
+      case "newNamespace":
+        return createNamespace(new Set(s.all<VPS>("vps").map((v) => v.namespace)));
+      case "saveVps": {
+        const raw = z.record(z.string(), z.unknown()).parse(input);
+        const address = z.string().min(1).parse(raw.address);
+        const q = vpsSchema.parse({
+          ...raw,
+          publicAddress: raw.publicAddress || address,
         });
-      case "saveVps":
-        value = s.saveVps(input);
+        value = s.saveVps(q);
         break;
+      }
       case "saveNode":
         value = s.saveNode(input);
         break;
@@ -108,6 +133,7 @@ export class API {
         return s.affectedChains(id.parse(input));
       case "saveSettings": {
         const q = settingsSchema.parse(input);
+        if (!q.sshKeyPath) q.sshKeyPath = DEFAULT_SSH_KEY_PATH;
         if (q.cloudflareKey === "********")
           q.cloudflareKey = s.settings().cloudflareKey;
         value = s.saveSettings(q);
@@ -116,19 +142,49 @@ export class API {
       }
       case "zones":
         return new Cloudflare(s.settings()).zones();
+      case "sshKeyStatus": {
+        const q = z.object({ path: z.string().min(1).max(1024).optional() }).optional().parse(input);
+        return this.ssh.keyStatus(q?.path || s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH);
+      }
       case "tailscale":
         return this.ssh.localTailscale();
       case "generateKey": {
-        const path = join(
-          homedir(),
-          ".ssh",
-          "gungun",
-          `id_ed25519_${Date.now()}`,
-        );
-        const publicKey = await this.ssh.generateKey(path);
-        s.saveSettings({ ...s.settings(), sshKeyPath: path });
+        const q = z.object({ path: z.string().min(1).max(1024).optional() }).optional().parse(input);
+        const generated = await this.ssh.generateKey(q?.path || s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH);
+        s.saveSettings({ ...s.settings(), sshKeyPath: generated.path });
         this.notify();
-        return { path, publicKey };
+        return generated;
+      }
+      case "rotateKey": {
+        const q = z.object({ path: z.string().min(1).max(1024).optional() }).optional().parse(input);
+        const activePath = resolveSSHKeyPath(q?.path || s.settings().sshKeyPath || DEFAULT_SSH_KEY_PATH);
+        const candidatePath = join(
+          dirname(activePath),
+          `${basename(activePath)}_rotation_${Date.now()}_${randomBytes(3).toString("hex")}`,
+        );
+        return this.ssh.generateKey(candidatePath);
+      }
+      case "activateSSHKey": {
+        const q = z.object({ path: z.string().min(1).max(1024) }).parse(input);
+        const candidate = await this.ssh.keyStatus(q.path);
+        if (!candidate.exists) throw new Error("新密钥文件不完整，无法设为默认密钥");
+        const settings = s.settings();
+        const oldPath = settings.sshKeyPath || DEFAULT_SSH_KEY_PATH;
+        const oldResolved = resolveSSHKeyPath(oldPath);
+        let updatedHosts = 0;
+        s.transaction(() => {
+          for (const host of s.all<VPS>("vps")) {
+            if (host.auth !== "key") continue;
+            const hostPath = resolveSSHKeyPath(host.keyPath || oldPath);
+            if (hostPath === oldResolved) {
+              s.putRaw("vps", { ...host, keyPath: candidate.path });
+              updatedHosts++;
+            }
+          }
+          s.saveSettings({ ...settings, sshKeyPath: candidate.path });
+        });
+        this.notify();
+        return { path: candidate.path, updatedHosts };
       }
       case "sshTest": {
         const v = vpsSchema.parse(input);

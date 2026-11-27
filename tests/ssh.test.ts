@@ -108,6 +108,15 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 describe("真实 SSH 握手与跳板通道", () => {
+  it("生成默认 Ed25519 密钥并拒绝覆盖已有密钥", async () => {
+    const keyPath = join(root, "id_ed25519_gungun");
+    expect((await ssh.keyStatus(keyPath)).exists).toBe(false);
+    const generated = await ssh.generateKey(keyPath);
+    expect(generated.path).toBe(keyPath);
+    expect(generated.publicKey).toMatch(/^ssh-ed25519 /);
+    expect((await ssh.keyStatus(keyPath)).exists).toBe(true);
+    await expect(ssh.generateKey(keyPath)).rejects.toThrow("拒绝覆盖");
+  });
   it("首次连接要求核验指纹", async () => {
     await expect(ssh.run(target, "whoami")).rejects.toThrow("HOST_KEY_UNKNOWN");
   });
@@ -125,6 +134,15 @@ describe("真实 SSH 握手与跳板通道", () => {
     expect(await ssh.run({ ...target, jumpId: jumpVps.id }, "uptime")).toBe(
       "executed:uptime\n",
     );
+  });
+  it("拒绝重复的 VPS 域名空间标识，且不允许修改已保存标识", () => {
+    expect(() => store.saveVps({ ...target, namespace: "b9k3m" })).toThrow("创建后不可修改");
+    expect(() => store.saveVps({
+      ...jumpVps,
+      id: randomUUID(),
+      name: "duplicate namespace",
+      namespace: target.namespace,
+    })).toThrow("已被其他 VPS 使用");
   });
   it("认证失败给出错误，主机记录仍可保存", async () => {
     await expect(

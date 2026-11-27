@@ -85,7 +85,13 @@ export class Store {
   }
   saveVps(input: unknown) {
     const v = vpsSchema.parse(input);
-    validateVpsGraph([...this.all<VPS>("vps").filter((x) => x.id !== v.id), v]);
+    const hosts = this.all<VPS>("vps");
+    const previous = hosts.find((x) => x.id === v.id);
+    if (previous && previous.namespace !== v.namespace)
+      throw new Error("VPS 独立域名标识创建后不可修改");
+    if (hosts.some((x) => x.id !== v.id && x.namespace === v.namespace))
+      throw new Error("独立域名标识已被其他 VPS 使用，请重新生成");
+    validateVpsGraph([...hosts.filter((x) => x.id !== v.id), v]);
     return this.transaction(() => {
       this.putRaw("vps", v);
       this.putRaw(
@@ -164,10 +170,15 @@ export class Store {
   }
   settings(): Settings {
     const r = this.db.prepare("SELECT data FROM settings WHERE id=1").get();
-    return settingsSchema.parse(r ? JSON.parse(r.data as string) : {});
+    const parsed = settingsSchema.parse(r ? JSON.parse(r.data as string) : {});
+    return {
+      ...parsed,
+      sshKeyPath: parsed.sshKeyPath || "~/.ssh/id_ed25519_gungun",
+    };
   }
   saveSettings(input: unknown) {
     const s = settingsSchema.parse(input);
+    if (!s.sshKeyPath) s.sshKeyPath = "~/.ssh/id_ed25519_gungun";
     this.db
       .prepare(
         "INSERT INTO settings(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
