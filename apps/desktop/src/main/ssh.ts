@@ -240,7 +240,7 @@ export class SSH {
     if (!status.exists || !status.publicKey)
       throw new Error("本机 SSH 密钥不完整，请先在设置中生成密钥");
     const parts = status.publicKey.trim().split(/\s+/);
-    if (!/^ssh-(ed25519|rsa)|^ecdsa-sha2-/.test(parts[0]) || parts.length < 2)
+    if (!parts[0] || !/^ssh-(ed25519|rsa)|^ecdsa-sha2-/.test(parts[0]) || parts.length < 2)
       throw new Error("本机公钥格式无效");
     const publicKey = parts.slice(0, 2).join(" ");
     const line = shellQuote(publicKey);
