@@ -27,11 +27,16 @@ const children: ReturnType<typeof spawn>[] = [];
 const readiness: Awaited<ReturnType<typeof createCoreReadiness>>[] = [];
 const logs = ["", ""];
 let processError: Error | undefined;
+let latencyRequests = 0;
 const target = createServer((req, res) => {
   if (req.url === "/download") {
     res.writeHead(200, { "Content-Length": "1000000" });
     res.end(Buffer.alloc(1000000, 42));
-  } else { res.writeHead(204); res.end(); }
+  } else {
+    latencyRequests++;
+    res.writeHead(204);
+    res.end();
+  }
 });
 await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
 try {
@@ -77,7 +82,8 @@ try {
   assert.equal(result.hops?.length, 2);
   assert.ok(result.hops?.every((hop) => hop.ok));
   assert.ok(result.speedMBps! > 0);
-  console.log("PASS: actual Snell v6 node, sing-box detour two-hop chain, per-hop connectivity, real 1MB download");
+  assert.equal(latencyRequests, 10, "each of 5 real-delay measurements must make two requests");
+  console.log("PASS: actual Snell v6 node, two-sample real-delay tests, sing-box detour two-hop chain, per-hop connectivity, real 1MB download");
   nodes[1].password = "wrong-second-hop-password";
   const broken = await benchmark.test(chain, nodes, null, settings, false);
   assert.ok(broken.error);

@@ -209,7 +209,7 @@ export interface Task {
 export const settingsSchema = z.object({
   theme: z.enum(["system", "light", "dark"]).default("system"),
   concurrency: z.number().int().min(1).max(50).default(10),
-  latencyUrl: z.url().default("https://www.gstatic.com/generate_204"),
+  latencyUrl: z.url().default("https://www.google.com/generate_204"),
   downloadUrl: z
     .url()
     .default("https://speed.cloudflare.com/__down?bytes=10000000"),

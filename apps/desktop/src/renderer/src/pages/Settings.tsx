@@ -269,7 +269,10 @@ export default function Settings() {
                 onChange={(e) => update("timeoutMs", Number(e.target.value))}
               />
             </Field>
-            <Field label="真连接延迟 URL">
+            <Field
+              label="真连接延迟 URL"
+              hint="默认与 v2rayN 一致使用 Google 204；每个节点连续请求两次，复用连接并取较快的一次。"
+            >
               <Input
                 type="url"
                 value={values.latencyUrl}

@@ -98,7 +98,10 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 		return nil, e
 	}
 	proxy, _ := url.Parse("socks5://" + endpoint)
-	transport := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}
+	transport := &http.Transport{
+		Proxy:             http.ProxyURL(proxy),
+		ForceAttemptHTTP2: true,
+	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: time.Duration(r.TimeoutMS) * time.Millisecond, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > 5 {
@@ -106,23 +109,35 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 		}
 		return nil
 	}}
-	start := time.Now()
-	res, e := client.Get(r.LatencyURL)
-	if e != nil {
-		return nil, e
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+	// Match v2rayN: warm the connection with two sequential requests, separated
+	// by 100 ms, and report the faster successful response.
+	latencySamples := make([]float64, 0, 2)
+	for attempt := 0; attempt < 2; attempt++ {
+		start := time.Now()
+		res, requestErr := client.Get(r.LatencyURL)
+		if requestErr != nil {
+			return nil, requestErr
+		}
+		if res.StatusCode < 200 || res.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+			res.Body.Close()
+			return nil, fmt.Errorf("latency HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		}
+		_, requestErr = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 		res.Body.Close()
-		time.Sleep(20 * time.Millisecond)
-		return nil, fmt.Errorf("latency HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		if requestErr != nil {
+			return nil, requestErr
+		}
+		latencySamples = append(latencySamples, float64(time.Since(start).Microseconds())/1000)
+		if attempt == 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	_, e = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
-	res.Body.Close()
-	if e != nil {
-		return nil, e
+	latencyMs := latencySamples[0]
+	if latencySamples[1] < latencyMs {
+		latencyMs = latencySamples[1]
 	}
-	result := M{"latencyMs": float64(time.Since(start).Microseconds()) / 1000, "speedMBps": nil, "error": nil}
+	result := M{"latencyMs": latencyMs, "speedMBps": nil, "error": nil}
 	if r.Speed {
 		start = time.Now()
 		res, e = client.Get(r.DownloadURL)

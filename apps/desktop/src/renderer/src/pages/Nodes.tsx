@@ -288,11 +288,11 @@ export default function Nodes() {
             onClick={() => {
               void run(
                 () => call("export", { tagId, format: "base64" }),
-                "已导出 V2Ray Base64",
+                "已复制 V2Ray Base64 订阅到剪贴板",
               );
             }}
           >
-            Base64
+            复制 Base64
           </Button>
         )}
       </div>

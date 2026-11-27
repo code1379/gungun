@@ -173,6 +173,12 @@ export class Store {
     const parsed = settingsSchema.parse(r ? JSON.parse(r.data as string) : {});
     return {
       ...parsed,
+      // Migrate the former default so the first post-upgrade comparison uses
+      // the same Google 204 endpoint as v2rayN.
+      latencyUrl:
+        parsed.latencyUrl === "https://www.gstatic.com/generate_204"
+          ? "https://www.google.com/generate_204"
+          : parsed.latencyUrl,
       sshKeyPath: parsed.sshKeyPath || "~/.ssh/id_ed25519_gungun",
     };
   }

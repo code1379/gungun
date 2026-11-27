@@ -85,10 +85,62 @@ export class Benchmark {
       await readiness.wait(() => exited);
       if (processError) throw processError;
       const port = config.inbounds[0].listen_port;
+      // Match v2rayN's real-delay method: two requests over one reusable
+      // proxy connection, 100 ms apart, and report the faster successful sample.
+      const latencyCommon = [
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-redirs",
+        "5",
+        "--proxy",
+        `socks5h://127.0.0.1:${port}`,
+        "--noproxy",
+        "",
+        "--max-time",
+        String(settings.timeoutMs / 1000),
+        "--output",
+        "/dev/null",
+        "--write-out",
+        "%{http_code} %{time_total}\\n",
+      ];
+      const { stdout: latencyOutput } = await exec(
+        "/usr/bin/curl",
+        [...latencyCommon, "--", settings.latencyUrl, settings.latencyUrl],
+        {
+          timeout: settings.timeoutMs * 2 + 2000,
+          env: {
+            ...process.env,
+            HTTP_PROXY: "",
+            HTTPS_PROXY: "",
+            ALL_PROXY: "",
+            http_proxy: "",
+            https_proxy: "",
+            all_proxy: "",
+          },
+        },
+      );
+      const latencySamples = latencyOutput
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => line.trim().split(/\\s+/).map(Number))
+        .filter(
+          ([status, seconds]) =>
+            Number.isFinite(status) &&
+            status >= 200 &&
+            status < 400 &&
+            Number.isFinite(seconds) &&
+            seconds > 0,
+        )
+        .map(([, seconds]) => seconds * 1000);
+      if (!latencySamples.length)
+        throw new Error(`延迟测试未获得有效 HTTP 响应：${latencyOutput.trim() || "无响应"}`);
+      const latencyMs = Math.min(...latencySamples);
       const common = [
         "--silent",
         "--show-error",
         "--fail",
+        "--location",
         "--proxy",
         `socks5h://127.0.0.1:${port}`,
         "--noproxy",
@@ -100,23 +152,6 @@ export class Benchmark {
         "--write-out",
         "%{http_code} %{time_total} %{size_download}",
       ];
-      const { stdout } = await exec(
-        "/usr/bin/curl",
-        [...common, "--", settings.latencyUrl],
-        {
-          timeout: settings.timeoutMs + 2000,
-          env: {
-            ...process.env,
-            HTTP_PROXY: "",
-            HTTPS_PROXY: "",
-            ALL_PROXY: "",
-          },
-        },
-      );
-      const [code, seconds] = stdout.trim().split(" ");
-      if (Number(code) < 200 || Number(code) >= 400)
-        throw new Error(`延迟请求返回 HTTP ${code}`);
-      const latencyMs = Number(seconds) * 1000;
       let speedMBps: number | null = null;
       if (speed) {
         const { stdout: out } = await exec(

@@ -3,7 +3,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { isIP } from "node:net";
-import { dialog, shell } from "electron";
+import { clipboard, dialog, shell } from "electron";
 import {
   chainSchema,
   exportBase64,
@@ -448,6 +448,10 @@ export class API {
           q.format === "mihomo"
             ? exportMihomo(nodes, chains)
             : exportBase64(nodes, chains.length > 0);
+        if (q.format === "base64") {
+          clipboard.writeText(content);
+          return { copied: true };
+        }
         const result = await dialog.showSaveDialog({
           defaultPath: q.format === "mihomo" ? "gungun.yaml" : "gungun.txt",
           filters: [

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"sync/atomic"
 )
 
 func TestCorruptedBackupNeverChangesLiveConfiguration(t *testing.T) {
@@ -413,10 +414,12 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 	startServer(first, "entry")
 	second := makeState("exit-host", []string{"anytls", "snell", "vless-ws", "vless-reality"})
 	startServer(second, "exit")
+	var latencyRequests atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/download" {
 			_, _ = w.Write(make([]byte, 1000000))
 		} else {
+			latencyRequests.Add(1)
 			w.WriteHeader(204)
 		}
 	}))
@@ -468,6 +471,7 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 	manager := New(root, bin)
 	run := func(t *testing.T, config M) {
 		t.Helper()
+		before := latencyRequests.Load()
 		result, err := manager.Benchmark(BenchRequest{Config: config, LatencyURL: target.URL, DownloadURL: target.URL + "/download", DownloadBytes: 1000000, TimeoutMS: 15000, Speed: true})
 		if err != nil {
 			entry, _ := os.ReadFile(filepath.Join(root, "entry.log"))
@@ -476,6 +480,9 @@ func TestRealCoreSixProtocolsAndChain(t *testing.T) {
 		}
 		if result["speedMBps"] == nil {
 			t.Fatal("no actual download")
+		}
+		if got := latencyRequests.Load() - before; got != 2 {
+			t.Fatalf("latency request count = %d, want 2", got)
 		}
 	}
 	for i, node := range firstNodes {
