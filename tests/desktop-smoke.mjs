@@ -73,10 +73,10 @@ try {
   await expect(page.getByText("SSH 密钥认证已启用", { exact: true })).toBeVisible();
   const installedPublicKey = generatedKey.value.publicKey
     .trim()
-    .split(/\\s+/)
+    .split(/\s+/)
     .slice(0, 2)
     .join(" ");
-  if (!ssh.authorizedKeys.split(/\\r?\\n/).includes(installedPublicKey))
+  if (!ssh.authorizedKeys.split(/\r?\n/).includes(installedPublicKey))
     throw new Error("The generated SSH public key was not written to remote authorized_keys");
   await expect.poll(() => ssh.publicKeyLogins).toBeGreaterThan(0);
   const afterKeyInstall = await page.evaluate(() => window.gungun.invoke("snapshot"));
