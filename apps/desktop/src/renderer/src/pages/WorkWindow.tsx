@@ -3,9 +3,14 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useApp } from "../api";
-import { Badge, Button, ErrorView, pretty } from "../components/ui";
+import { terminalTheme } from "../lib/theme";
+import { Badge, Button, ErrorView, pretty, Select, Progress } from "../components/ui";
 export default function WorkWindow({ type, id }: { type: string; id: string }) {
-  const { data, call } = useApp();
+  const { data, call, resolvedTheme } = useApp();
+  const xterm = useRef<Terminal | null>(null);
+  useEffect(() => {
+    if (xterm.current) xterm.current.options.theme = terminalTheme(resolvedTheme);
+  }, [resolvedTheme]);
   const terminalRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [log, setLog] = useState("");
@@ -17,8 +22,9 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "Menlo, Monaco, monospace",
-      theme: { background: "#17191c", foreground: "#eceef1" },
+      theme: terminalTheme(document.documentElement.classList.contains("dark") ? "dark" : "light"),
     });
+    xterm.current = terminal;
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(terminalRef.current);
@@ -47,6 +53,7 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
       remove();
       data.dispose();
       terminal.dispose();
+      xterm.current = null;
     };
   }, [type, id, retry]);
   useEffect(() => {
@@ -98,15 +105,15 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
         </span>
         <span className="grow" />
         {type === "logs" && (
-          <select
+          <Select
             className="inline-select"
             value={unit}
-            onChange={(e) => setUnit(e.target.value)}
+            onValueChange={(value) => setUnit(value)}
           >
             <option value="gungun-sing-box">sing-box</option>
             <option value="gungun-caddy">Caddy</option>
             <option value="gungun-tunnel">Tunnel</option>
-          </select>
+          </Select>
         )}
         {type === "terminal" && (
           <Button onClick={() => setRetry((r) => r + 1)}>重新连接</Button>
@@ -126,7 +133,7 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
             <h1>{task.type}</h1>
             <Badge>{task.state}</Badge>
           </div>
-          <progress value={task.progress} max={100} />
+          <Progress value={task.progress} max={100} />
           {task.steps.map((s, i) => (
             <div className="task-step" key={i}>
               <Badge
@@ -153,3 +160,4 @@ export default function WorkWindow({ type, id }: { type: string; id: string }) {
     </div>
   );
 }
+

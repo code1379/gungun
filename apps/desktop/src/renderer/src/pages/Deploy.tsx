@@ -1,15 +1,8 @@
 import { useState } from "react";
 import { Rocket, Server, Shield, Network } from "lucide-react";
-import type { RemoteState, Service, VPS } from "@gungun/domain";
+import { RemoteState, Service, VPS } from "@gungun/domain";
 import { useApp } from "../api";
-import {
-  Badge,
-  Button,
-  Empty,
-  Field,
-  PageHeader,
-  protocolLabels,
-} from "../components/ui";
+import { Badge, Button, Empty, Field, PageHeader, protocolLabels, Select, Input } from "../components/ui";
 const defaults: Service = {
   id: "hysteria2",
   protocol: "hysteria2",
@@ -112,11 +105,10 @@ export default function Deploy() {
                 </div>
                 <div className="form-grid">
                   <Field label="接入方式">
-                    <select
+                    <Select
                       value={service.access}
-                      onChange={(e) =>
-                        update("access", e.target.value as Service["access"])
-                      }
+                      onValueChange={(value) =>
+                        update("access", value as Service["access"])}
                     >
                       <option value="direct">直连</option>
                       {service.protocol === "vless-ws" && (
@@ -125,18 +117,17 @@ export default function Deploy() {
                           <option value="argo">Argo Tunnel</option>
                         </>
                       )}
-                    </select>
+                    </Select>
                   </Field>
                   <Field label="协议出站">
-                    <select
+                    <Select
                       value={service.egress}
-                      onChange={(e) =>
-                        update("egress", e.target.value as Service["egress"])
-                      }
+                      onValueChange={(value) =>
+                        update("egress", value as Service["egress"])}
                     >
                       <option value="DIRECT">DIRECT</option>
                       <option value="WARP">WARP</option>
-                    </select>
+                    </Select>
                   </Field>
                   <Field
                     label="内部监听端口"
@@ -146,7 +137,7 @@ export default function Deploy() {
                         : "0 表示自动分配可用端口。"
                     }
                   >
-                    <input
+                    <Input
                       type="number"
                       min={vps.kind === "nat" ? 1 : 0}
                       max={65535}
@@ -164,7 +155,7 @@ export default function Deploy() {
                           : "0 表示与内部监听端口相同。"
                       }
                     >
-                      <input
+                      <Input
                         type="number"
                         required
                         min={vps.kind === "nat" ? 1 : 0}
@@ -178,18 +169,17 @@ export default function Deploy() {
                   )}
                   {service.access === "cdn" && (
                     <Field label="Cloudflare Edge HTTPS 端口">
-                      <select
+                      <Select
                         value={service.edgePort}
-                        onChange={(e) =>
-                          update("edgePort", Number(e.target.value))
-                        }
+                        onValueChange={(value) =>
+                          update("edgePort", Number(value))}
                       >
                         {[443, 2053, 2083, 2087, 2096, 8443].map((p) => (
                           <option key={p} value={p}>
                             {p}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </Field>
                   )}
                   {service.protocol !== "vless-reality" && (
@@ -201,7 +191,7 @@ export default function Deploy() {
                           : "请先在 VPS 设置中选择 Cloudflare Zone 以申请证书。"
                       }
                     >
-                      <input
+                      <Input
                         value={service.domain}
                         onChange={(e) => update("domain", e.target.value)}
                         placeholder="按 Edge 证书覆盖自动选择域名"
@@ -210,7 +200,7 @@ export default function Deploy() {
                   )}
                   {service.protocol === "vless-ws" && (
                     <Field label="WebSocket 路径">
-                      <input
+                      <Input
                         required
                         value={service.path}
                         onChange={(e) => update("path", e.target.value)}
@@ -220,7 +210,7 @@ export default function Deploy() {
                   {service.protocol === "vless-reality" && (
                     <>
                       <Field label="Reality 握手目标">
-                        <input
+                        <Input
                           required
                           value={service.realityServer}
                           onChange={(e) =>
@@ -229,7 +219,7 @@ export default function Deploy() {
                         />
                       </Field>
                       <Field label="Reality 握手端口">
-                        <input
+                        <Input
                           type="number"
                           min={1}
                           max={65535}
@@ -245,7 +235,7 @@ export default function Deploy() {
                     label={service.protocol === "snell" ? "PSK" : "密码"}
                     hint="留空由 fq 生成随机凭据。"
                   >
-                    <input
+                    <Input
                       type="password"
                       autoComplete="off"
                       value={service.password}
@@ -256,7 +246,7 @@ export default function Deploy() {
                     service.protocol,
                   ) && (
                     <Field label="UUID" hint="留空自动生成。">
-                      <input
+                      <Input
                         value={service.uuid}
                         onChange={(e) => update("uuid", e.target.value)}
                       />
@@ -303,3 +293,4 @@ export default function Deploy() {
 export function hostLabel(v: VPS) {
   return `${v.name} (${v.address})`;
 }
+

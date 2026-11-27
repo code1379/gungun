@@ -10,6 +10,8 @@ import {
   resolveTag,
   serviceSchema,
   shareLink,
+  singboxConfig,
+  toSingBox,
   validateChain,
   validateVpsGraph,
   vpsSchema,
@@ -35,6 +37,29 @@ const chain = (ids: string[]): Chain => ({
   id: randomUUID(),
   name: "HK → US",
   nodeIds: ids,
+});
+describe("sing-box 执行配置", () => {
+  it("detour 逐跳连接并读取引用节点的最新地址", () => {
+    const nodes = [node("hysteria2"), node("anytls"), node("snell")];
+    const c = chain(nodes.map((n) => n.id));
+    nodes[1].address = "updated.example.com";
+    const config = singboxConfig(nodes, c, 12345);
+    expect(config.outbounds.map((n) => n.detour)).toEqual([undefined, "gungun-hop-1", "gungun-hop-2"]);
+    expect(config.outbounds[1].server).toBe("updated.example.com");
+    expect(config.route.final).toBe("gungun-hop-3");
+    expect(config.inbounds[0].listen_port).toBe(12345);
+  });
+  it("不把整张证书指纹静默丢弃或误用为 SPKI 指纹", () => {
+    expect(() => toSingBox(node("hysteria2", { certificatePin: "ab".repeat(32) }), "test")).toThrow("整张证书");
+  });
+  it("保留 WS Host、TLS SNI 和路径，Reality 使用独立参数", () => {
+    const ws = toSingBox(node("vless-ws", { tls: true }), "ws");
+    expect(ws.transport).toMatchObject({ type: "ws", path: "/test", headers: { Host: "node.example.com" } });
+    expect(ws.tls).toMatchObject({ server_name: "node.example.com" });
+    const reality = toSingBox(node("vless-reality", { publicKey: "public-key", shortId: "aabb" }), "reality");
+    expect(reality.transport).toBeUndefined();
+    expect(reality.tls).toMatchObject({ reality: { enabled: true, public_key: "public-key", short_id: "aabb" } });
+  });
 });
 describe("链式代理模型与 Mihomo 配置", () => {
   it("按顺序拨号，最终规则选择最后一跳", () => {
@@ -230,3 +255,4 @@ it("TLS 通配符只覆盖一层子域名", async () => {
   expect(matchesDNSName("*.ns.example.com", "node.ns.example.com")).toBe(true);
   expect(matchesDNSName("*.example.com", "example.com")).toBe(false);
 });
+

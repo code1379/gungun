@@ -56,7 +56,7 @@ export class API {
     this.benchmark = new Benchmark(
       join(
         resources,
-        `mihomo-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`,
+        `sing-box-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`,
       ),
       this.ssh,
     );
@@ -220,7 +220,6 @@ export class API {
               "warp status",
               "renew",
               "core update sing-box",
-              "core update mihomo",
               "core update cloudflared",
               "core update caddy",
             ]),
@@ -573,3 +572,4 @@ export class API {
       }
   }
 }
+

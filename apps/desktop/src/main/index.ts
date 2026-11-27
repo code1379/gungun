@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ClientChannel } from "ssh2";
@@ -15,6 +15,8 @@ const sessions = new Map<
 >();
 const windows = new Map<number, { type: string; id: string }>();
 function notify() {
+  const choice = store.settings().theme;
+  if (nativeTheme.themeSource !== choice) nativeTheme.themeSource = choice;
   for (const window of BrowserWindow.getAllWindows())
     window.webContents.send("changed");
 }
@@ -25,7 +27,7 @@ function openWindow(type = "main", id = "") {
     minWidth: type === "main" ? 980 : 600,
     minHeight: 620,
     title: "Gungun",
-    backgroundColor: "#17191c",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#17191c" : "#f7f8fa",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 20, y: 19 },
     webPreferences: {
@@ -72,6 +74,11 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     const data = process.env.GUNGUN_DATA_DIR || app.getPath("userData");
     store = new Store(join(data, "gungun.db"));
+    nativeTheme.themeSource = store.settings().theme;
+    nativeTheme.on("updated", () => {
+      for (const window of BrowserWindow.getAllWindows())
+        window.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#17191c" : "#f7f8fa");
+    });
     const resources = app.isPackaged
       ? join(process.resourcesPath, "bin")
       : join(app.getAppPath(), "../../resources/bin");
@@ -208,3 +215,4 @@ if (!app.requestSingleInstanceLock()) {
     store?.close();
   });
 }
+

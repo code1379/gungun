@@ -29,6 +29,7 @@ export async function invoke<T>(op: string, input?: unknown): Promise<T> {
   return r.value as T;
 }
 interface Context {
+  resolvedTheme: "light" | "dark";
   data: Snapshot | null;
   refresh: () => Promise<void>;
   call: typeof invoke;
@@ -42,6 +43,20 @@ export function Provider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const preference = data?.settings.theme || "system";
+  const resolvedTheme = preference === "system" ? (systemDark ? "dark" : "light") : preference;
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(media.matches);
+    media.addEventListener("change", update);
+    update();
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+    document.documentElement.dataset.theme = resolvedTheme;
+  }, [resolvedTheme]);
   const refresh = useCallback(async () => {
     setData(await invoke<Snapshot>("snapshot"));
   }, []);
@@ -69,6 +84,7 @@ export function Provider({ children }: { children: ReactNode }) {
     <AppContext.Provider
       value={{
         data,
+        resolvedTheme,
         refresh,
         call: invoke,
         run,
@@ -102,3 +118,4 @@ export function errorText(error: string) {
   }
   return error;
 }
+

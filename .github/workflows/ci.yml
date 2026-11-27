@@ -33,15 +33,13 @@ jobs:
       - run: pnpm exec vitest run --reporter=default --reporter=junit --outputFile=test-results/unit.xml
       - run: pnpm cores:download
         env:
-          WITH_SINGBOX: "1"
           GH_TOKEN: ${{ github.token }}
       - name: Go race tests and six real sing-box protocols
         working-directory: fq
         env:
           SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
-          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
         run: go test -race -v ./... | tee ../test-results/go.txt
-      - name: Real Mihomo chain and failure localization
+      - name: Real sing-box detour chain and failure localization
         run: pnpm test:integration | tee test-results/chain.txt
       - run: pnpm fq:build
       - name: Real systemd deployment, Caddy and rollback
@@ -97,3 +95,4 @@ jobs:
             resources/bin/fq-linux-*
             test-results/
           if-no-files-found: error
+

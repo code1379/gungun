@@ -198,6 +198,7 @@ export interface Task {
   updatedAt: string;
 }
 export const settingsSchema = z.object({
+  theme: z.enum(["system", "light", "dark"]).default("system"),
   concurrency: z.number().int().min(1).max(50).default(10),
   latencyUrl: z.url().default("https://www.gstatic.com/generate_204"),
   downloadUrl: z
@@ -261,3 +262,4 @@ export function matchesDNSName(pattern: string, hostname: string) {
   const prefix = h.slice(0, -suffix.length);
   return prefix.length > 0 && !prefix.includes(".");
 }
+

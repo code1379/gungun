@@ -25,13 +25,19 @@ type BenchRequest struct {
 	Speed         bool           `json:"speed"`
 }
 
-type limitedLog struct { mu sync.Mutex; data string }
+type limitedLog struct {
+	mu   sync.Mutex
+	data string
+}
+
 func (l *limitedLog) Write(b []byte) (int, error) {
-  l.mu.Lock()
-  defer l.mu.Unlock()
-  l.data += string(b)
-  if len(l.data) > 12000 { l.data = l.data[len(l.data)-12000:] }
-  return len(b), nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.data += string(b)
+	if len(l.data) > 12000 {
+		l.data = l.data[len(l.data)-12000:]
+	}
+	return len(b), nil
 }
 func (l *limitedLog) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.data }
 
@@ -50,11 +56,13 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 		return nil, e
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	r.Config["mixed-port"] = port
-	r.Config["allow-lan"] = false
-	r.Config["bind-address"] = "127.0.0.1"
-	delete(r.Config, "external-controller")
+	defer listener.Close()
+	r.Config["inbounds"] = []any{M{"type": "mixed", "tag": "gungun-benchmark", "listen": "127.0.0.1", "listen_port": port}}
+	readiness, e := newCoreReadiness(r.Config)
+	if e != nil {
+		return nil, e
+	}
+	defer readiness.Close()
 	dir, e := os.MkdirTemp("", "fq-bench-")
 	if e != nil {
 		return nil, e
@@ -70,37 +78,24 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.TimeoutMS*2+10000)*time.Millisecond)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(m.Bin, "mihomo"), "-d", dir, "-f", path)
+	cmd := exec.CommandContext(ctx, filepath.Join(m.Bin, "sing-box"), "run", "--disable-color", "-D", dir, "-c", path)
 	coreLog := &limitedLog{}
 	cmd.Stdout = coreLog
 	cmd.Stderr = coreLog
+	_ = listener.Close()
 	if e = cmd.Start(); e != nil {
 		return nil, e
 	}
 	defer func() {
-    _ = cmd.Process.Kill()
-    _ = cmd.Wait()
-    if runErr != nil && coreLog.String() != "" {
-      runErr = fmt.Errorf("%w; core log: %s", runErr, coreLog.String())
-    }
-  }()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		if runErr != nil && coreLog.String() != "" {
+			runErr = fmt.Errorf("%w; core log: %s", runErr, coreLog.String())
+		}
+	}()
 	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
-	ready := false
-	for i := 0; i < 100; i++ {
-		conn, e := net.DialTimeout("tcp", endpoint, 50*time.Millisecond)
-		if e == nil {
-			conn.Close()
-			ready = true
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-	if !ready {
-		return nil, fmt.Errorf("mihomo did not start")
+	if e = readiness.Wait(ctx); e != nil {
+		return nil, e
 	}
 	proxy, _ := url.Parse("http://" + endpoint)
 	transport := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}
@@ -116,13 +111,16 @@ func (m *Manager) Benchmark(r BenchRequest) (measurement M, runErr error) {
 	if e != nil {
 		return nil, e
 	}
+	if res.StatusCode < 200 || res.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		res.Body.Close()
+		time.Sleep(20 * time.Millisecond)
+		return nil, fmt.Errorf("latency HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
 	_, e = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 	res.Body.Close()
 	if e != nil {
 		return nil, e
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 400 {
-		return nil, fmt.Errorf("latency HTTP %d", res.StatusCode)
 	}
 	result := M{"latencyMs": float64(time.Since(start).Microseconds()) / 1000, "speedMBps": nil, "error": nil}
 	if r.Speed {

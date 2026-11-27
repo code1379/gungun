@@ -1,25 +1,8 @@
 import { useState } from "react";
-import {
-  Plus,
-  ChevronLeft,
-  Terminal,
-  ScrollText,
-  RefreshCw,
-  Pencil,
-  Server,
-} from "lucide-react";
-import type { VPS } from "@gungun/domain";
+import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server } from "lucide-react";
+import { VPS } from "@gungun/domain";
 import { useApp } from "../api";
-import {
-  Badge,
-  Button,
-  Confirm,
-  Empty,
-  Field,
-  Modal,
-  PageHeader,
-  pretty,
-} from "../components/ui";
+import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
 interface Zone {
   id: string;
   name: string;
@@ -245,23 +228,23 @@ export default function Vps() {
           >
             <div className="form-grid">
               <Field label="名称">
-                <input
+                <Input
                   required
                   value={editing.name}
                   onChange={(e) => set("name", e.target.value)}
                 />
               </Field>
               <Field label="主机类型">
-                <select
+                <Select
                   value={editing.kind}
-                  onChange={(e) => set("kind", e.target.value as VPS["kind"])}
+                  onValueChange={(value) => set("kind", value as VPS["kind"])}
                 >
                   <option value="public">普通公网 VPS</option>
                   <option value="nat">NAT VPS</option>
-                </select>
+                </Select>
               </Field>
               <Field label="SSH 地址" hint="公网 IP、主机名或 Tailscale IP">
-                <input
+                <Input
                   required
                   value={editing.address}
                   onChange={(e) => set("address", e.target.value)}
@@ -271,14 +254,14 @@ export default function Vps() {
                 label="公网地址"
                 hint="用于节点直连与 DNS 回源；NAT 填映射公网 IP"
               >
-                <input
+                <Input
                   required
                   value={editing.publicAddress}
                   onChange={(e) => set("publicAddress", e.target.value)}
                 />
               </Field>
               <Field label="SSH 端口">
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={65535}
@@ -287,25 +270,25 @@ export default function Vps() {
                 />
               </Field>
               <Field label="SSH 用户">
-                <input
+                <Input
                   required
                   value={editing.username}
                   onChange={(e) => set("username", e.target.value)}
                 />
               </Field>
               <Field label="认证方式">
-                <select
+                <Select
                   value={editing.auth}
-                  onChange={(e) => set("auth", e.target.value as VPS["auth"])}
+                  onValueChange={(value) => set("auth", value as VPS["auth"])}
                 >
                   <option value="key">SSH 私钥</option>
                   <option value="password">密码</option>
-                </select>
+                </Select>
               </Field>
               {editing.auth === "key" ? (
                 <Field label="私钥路径">
                   <div className="input-action">
-                    <input
+                    <Input
                       value={editing.keyPath}
                       onChange={(e) => set("keyPath", e.target.value)}
                     />
@@ -324,7 +307,7 @@ export default function Vps() {
                 </Field>
               ) : (
                 <Field label="密码">
-                  <input
+                  <Input
                     type="password"
                     autoComplete="off"
                     value={editing.password}
@@ -333,9 +316,9 @@ export default function Vps() {
                 </Field>
               )}
               <Field label="跳板机">
-                <select
+                <Select
                   value={editing.jumpId || ""}
-                  onChange={(e) => set("jumpId", e.target.value || null)}
+                  onValueChange={(value) => set("jumpId", value || null)}
                 >
                   <option value="">无，直接连接</option>
                   {data.vps
@@ -345,24 +328,24 @@ export default function Vps() {
                         {v.name}
                       </option>
                     ))}
-                </select>
+                </Select>
               </Field>
               <Field label="网络">
                 <label className="checkbox">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    
                     checked={editing.tailscale}
-                    onChange={(e) => set("tailscale", e.target.checked)}
+                    onCheckedChange={(checked) => set("tailscale", checked)}
                   />
                   使用 Tailscale 地址连接
                 </label>
               </Field>
               <Field label="Cloudflare Zone">
                 <div className="input-action">
-                  <select
+                  <Select
                     value={editing.zoneId}
-                    onChange={(e) => {
-                      const z = zones.find((z) => z.id === e.target.value);
+                    onValueChange={(value) => {
+                      const z = zones.find((z) => z.id === value);
                       if (z)
                         setEditing({
                           ...editing,
@@ -391,7 +374,7 @@ export default function Vps() {
                         {z.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <Button
                     type="button"
                     onClick={() => {
@@ -405,7 +388,7 @@ export default function Vps() {
                 </div>
               </Field>
               <Field label="独立域名空间">
-                <input
+                <Input
                   value={editing.namespace}
                   onChange={(e) => set("namespace", e.target.value)}
                 />
@@ -447,3 +430,4 @@ export default function Vps() {
     </>
   );
 }
+

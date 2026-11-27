@@ -36,12 +36,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: mkdir -p test-results && pnpm lint && pnpm typecheck && pnpm test | tee test-results/unit.txt
       - run: pnpm cores:download
-        env: { WITH_SINGBOX: "1", GH_TOKEN: "${{ github.token }}" }
+        env: { GH_TOKEN: "${{ github.token }}" }
       - working-directory: fq
         run: go test -race -v ./... | tee ../test-results/go.txt
         env:
           SING_BOX_BINARY: ${{ github.workspace }}/resources/bin/sing-box-linux-amd64
-          MIHOMO_BINARY: ${{ github.workspace }}/resources/bin/mihomo-linux-amd64
       - run: pnpm test:integration | tee test-results/chain.txt
       - run: pnpm fq:build
         env: { RELEASE_VERSION: "${{ inputs.release_tag || github.ref_name }}" }
@@ -152,3 +151,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
+

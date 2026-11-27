@@ -5,7 +5,7 @@ import { join } from "node:path";
 import net from "node:net";
 import { promisify } from "node:util";
 import {
-  mihomoConfig,
+  singboxConfig,
   type Chain,
   type ProxyNode,
   type Settings,
@@ -13,6 +13,7 @@ import {
   type VPS,
 } from "@gungun/domain";
 import type { SSH } from "./ssh";
+import { createCoreReadiness } from "./core-readiness";
 const exec = promisify(execFile);
 export interface Measurement {
   latencyMs: number;
@@ -27,22 +28,6 @@ async function freePort() {
   const port = (s.address() as net.AddressInfo).port;
   await new Promise<void>((r) => s.close(() => r()));
   return port;
-}
-async function ready(port: number, exited: () => boolean) {
-  for (let i = 0; i < 100; i++) {
-    if (exited()) throw new Error("Mihomo 启动失败，请检查协议参数");
-    const ok = await new Promise<boolean>((r) => {
-      const c = net.connect(port, "127.0.0.1");
-      c.once("connect", () => {
-        c.destroy();
-        r(true);
-      });
-      c.once("error", () => r(false));
-    });
-    if (ok) return;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error("Mihomo 启动超时");
 }
 export class Benchmark {
   constructor(
@@ -62,8 +47,8 @@ export class Benchmark {
       downloadURL.pathname === "/__down"
     )
       downloadURL.searchParams.set("bytes", String(settings.downloadBytes));
-    const config = mihomoConfig(nodes, chain, await freePort());
-    if (process.env.GUNGUN_CORE_DEBUG) config["log-level"] = "debug";
+    const config = singboxConfig(nodes, chain, await freePort());
+    if (process.env.GUNGUN_CORE_DEBUG) config.log.level = "debug";
     if (source)
       return this.ssh.fq<Measurement>(source, "bench", {
         config,
@@ -76,10 +61,12 @@ export class Benchmark {
     const dir = await mkdtemp(join(tmpdir(), "gungun-bench-"));
     let child: ReturnType<typeof spawn> | undefined;
     let runtimeLog = "";
+    let readiness: Awaited<ReturnType<typeof createCoreReadiness>> | undefined;
     try {
+      readiness = await createCoreReadiness(config);
       const path = join(dir, "config.json");
       await writeFile(path, JSON.stringify(config), { mode: 0o600 });
-      child = spawn(this.corePath, ["-d", dir, "-f", path], {
+      child = spawn(this.corePath, ["run", "--disable-color", "-D", dir, "-c", path], {
         stdio: ["ignore", "pipe", "pipe"],
       });
       for (const stream of [child.stdout, child.stderr])
@@ -95,9 +82,9 @@ export class Benchmark {
         processError = e;
         exited = true;
       });
-      await ready(config["mixed-port"], () => exited);
+      await readiness.wait(() => exited);
       if (processError) throw processError;
-      const port = config["mixed-port"];
+      const port = config.inbounds[0].listen_port;
       const common = [
         "--silent",
         "--show-error",
@@ -178,6 +165,7 @@ export class Benchmark {
           }, 2000).unref();
         });
       }
+      await readiness?.close();
       await rm(dir, { recursive: true, force: true });
     }
   }
@@ -250,3 +238,4 @@ export class Benchmark {
     return result;
   }
 }
+

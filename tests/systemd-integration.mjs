@@ -22,7 +22,7 @@ const upstream = createServer((_req, res) => {
 await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
 try {
   execFileSync("sudo", ["install", "-d", "-m", "755", "/usr/local/lib/gungun"]);
-  for (const name of ["sing-box", "mihomo"])
+  for (const name of ["sing-box"])
     execFileSync("sudo", [
       "install",
       "-m",
@@ -179,3 +179,4 @@ try {
     console.error("Cleanup:", e.message);
   }
 }
+

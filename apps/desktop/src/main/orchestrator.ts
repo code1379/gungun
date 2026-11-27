@@ -53,9 +53,6 @@ export class Orchestrator {
     await step("安装并校验 sing-box", () =>
       this.ssh.fq(vps, "core update sing-box"),
     );
-    await step("安装并校验测速核心", () =>
-      this.ssh.fq(vps, "core update mihomo"),
-    );
   }
   async sync(vps: VPS, step: Step) {
     const data = await step("SSH 读取 fq export", () =>
@@ -390,3 +387,4 @@ export class Orchestrator {
     throw new Error("无可用端口");
   }
 }
+
