@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server } from "lucide-react";
+import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, KeyRound } from "lucide-react";
 import { VPS } from "@gungun/domain";
 import { useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
@@ -10,6 +10,7 @@ export default function Vps() {
   const [overridePublicAddress, setOverridePublicAddress] = useState(false);
   const [test, setTest] = useState("");
   const [detail, setDetail] = useState<unknown>(null);
+  const [installingKey, setInstallingKey] = useState(false);
   if (!data) return null;
   const current = data.vps.find((v) => v.id === selected);
   const set = <K extends keyof VPS>(k: K, v: VPS[K]) =>
@@ -66,6 +67,27 @@ export default function Vps() {
             {current.tailscale && <Badge tone="blue">Tailscale</Badge>}
           </div>
           <div className="toolbar wrap">
+            {current.auth === "password" ? (
+              <Button
+                disabled={installingKey}
+                onClick={() => {
+                  void run(async () => {
+                    setInstallingKey(true);
+                    try {
+                      const result = await call("installSSHKey", { vpsId: current.id });
+                      setDetail(result);
+                    } finally {
+                      setInstallingKey(false);
+                    }
+                  }, "SSH 公钥已安装并验证，已切换为密钥认证");
+                }}
+              >
+                <KeyRound size={15} />
+                {installingKey ? "正在安装密钥…" : "安装 SSH 主密钥"}
+              </Button>
+            ) : (
+              <Badge tone="good">SSH 密钥认证已启用</Badge>
+            )}
             <Button
               onClick={() => {
                 setOverridePublicAddress(current.publicAddress !== current.address);
@@ -249,7 +271,19 @@ export default function Vps() {
                   <option value="nat">NAT VPS</option>
                 </Select>
               </Field>
-              <Field label="服务器地址" hint="Gungun 使用此地址建立 SSH 连接；可填写公网 IP、域名或 Tailscale IP">
+              <Field
+                label="服务器地址"
+                hint="Gungun 使用此地址建立 SSH 连接；可填写公网 IP、域名或 Tailscale IP"
+                help={{
+                  title: "服务器地址与节点对外地址",
+                  description: "服务器地址只用于 SSH 管理连接；节点对外地址用于生成代理节点和 DNS 回源地址。",
+                  steps: [
+                    "普通公网 VPS 通常两个地址相同。",
+                    "NAT VPS 的服务器地址可填写 Tailscale IP 或跳板机可达的内网地址。",
+                    "NAT VPS 的节点对外地址应填写服务商分配的公网映射 IP。",
+                  ],
+                }}
+              >
                 <Input
                   required
                   placeholder="例如 203.0.113.10"
@@ -311,35 +345,42 @@ export default function Vps() {
                   onChange={(e) => set("username", e.target.value)}
                 />
               </Field>
-              <Field label="认证方式">
-                <Select
-                  value={editing.auth}
-                  onValueChange={(value) => set("auth", value as VPS["auth"])}
-                >
-                  <option value="key">Gungun 默认 SSH 私钥</option>
-                  <option value="password">密码</option>
-                </Select>
-              </Field>
-              {editing.auth === "key" ? (
-                <Field label="SSH 私钥">
-                  <p className="hint">
-                    使用设置中的默认密钥：{editing.keyPath || data.settings.sshKeyPath || "~/.ssh/id_ed25519_gungun"}
-                  </p>
-                  <p className="hint">
-                    密钥统一在「设置 → SSH 与 Tailscale」中生成、选择和轮换。
-                  </p>
+              {data.vps.some((v) => v.id === editing.id) && editing.auth === "key" ? (
+                <Field label="SSH 认证">
+                  <p className="hint">此主机已安装 Gungun 主密钥。密钥路径由「设置 → SSH 与 Tailscale」统一管理。</p>
                 </Field>
               ) : (
-                <Field label="密码">
+                <Field
+                  label="SSH 登录密码"
+                  help={{
+                    title: "首次 SSH 登录",
+                    description: "首次添加 VPS 使用服务商提供的 SSH 密码登录。连接成功并核验主机指纹后，可以在 VPS 详情中安装本机主密钥。",
+                    steps: [
+                      "在服务商控制台或初始化邮件中找到 SSH 登录密码。",
+                      "先使用密码测试并保存 VPS。",
+                      "进入 VPS 详情，点击「安装 SSH 主密钥」。程序会把公钥追加到 authorized_keys，并实际验证密钥登录。",
+                      "验证成功后，Gungun 自动切换为密钥认证并清除本地保存的 SSH 密码。",
+                    ],
+                  }}
+                >
                   <Input
                     type="password"
                     autoComplete="off"
+                    required={editing.auth === "password"}
                     value={editing.password}
+                    disabled={editing.auth === "key"}
+                    placeholder={editing.auth === "key" ? "已启用密钥认证" : "输入 VPS SSH 密码"}
                     onChange={(e) => set("password", e.target.value)}
                   />
                 </Field>
               )}
-              <Field label="跳板机">
+              <Field
+                label="跳板机"
+                help={{
+                  title: "跳板机",
+                  description: "当 Mac 无法直接连接目标 VPS 的 SSH 端口时，可选择一台已添加且能够访问目标的 VPS。Gungun 会先登录跳板机，再通过 SSH 转发连接目标。",
+                }}
+              >
                 <Select
                   value={editing.jumpId || ""}
                   onValueChange={(value) => set("jumpId", value || null)}
@@ -354,7 +395,15 @@ export default function Vps() {
                     ))}
                 </Select>
               </Field>
-              <Field label="网络">
+              <Field
+                label="网络"
+                help={{
+                  title: "Tailscale 连接",
+                  description: "如果 SSH 地址填写的是 Tailscale IP，需要本机和 VPS 都已经加入同一个可互通的 Tailnet。此开关仅作连接方式标记，不会自动替你加入 Tailnet。",
+                  url: "https://tailscale.com/kb/1017/install",
+                  linkLabel: "查看 Tailscale 安装说明",
+                }}
+              >
                 <label className="checkbox">
                   <Checkbox
                     
@@ -364,33 +413,9 @@ export default function Vps() {
                   使用 Tailscale 地址连接
                 </label>
               </Field>
-              <Field
-                label="独立域名标识"
-                hint="创建 VPS 时自动生成；绑定 Cloudflare Zone 后会组成完整域名。保存后固定，不需要手动填写。"
-              >
-                <div className="input-action">
-                  <Input value={editing.namespace} readOnly />
-                  {!data.vps.some((v) => v.id === editing.id) && (
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        void run(async () => {
-                          const namespace = await call<string>("newNamespace");
-                          set("namespace", namespace);
-                        });
-                      }}
-                    >
-                      重新生成
-                    </Button>
-                  )}
-                </div>
-              </Field>
-              <p className="hint">
-                Cloudflare Zone 在「网络服务 → 域名管理」中绑定，不影响 SSH 连接。
-              </p>
             </div>
             {test && <pre className="output">{test}</pre>}
-            <div className="form-actions">
+            <div className="form-actions sticky bottom-[-16px] z-10 border-t border-border bg-background py-3">
               <Button
                 type="button"
                 onClick={() => {
