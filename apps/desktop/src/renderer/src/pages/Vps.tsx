@@ -283,8 +283,19 @@ export default function Vps() {
               loading={pendingAction === "ssh-config"}
               disabled={pendingAction !== null}
               onClick={() => runAction("ssh-config", async () => {
-                setDetail(await call("sshConfig", current.id));
-                setDetailLabel("独立 SSH config 已生成");
+                const result = await call<{
+                  includeAdded: boolean;
+                  sshConfigPath: string;
+                  path: string;
+                  alias: string;
+                  command: string;
+                }>("sshConfig", current.id);
+                setDetail(result);
+                setDetailLabel(
+                  result.includeAdded
+                    ? "独立 SSH config 已生成，并已添加 Include"
+                    : "独立 SSH config 已生成，Include 已存在",
+                );
               })}
             >
               生成独立 SSH config

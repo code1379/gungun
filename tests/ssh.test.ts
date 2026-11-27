@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, it, expect } from "vitest";
 import ssh2 from "ssh2";
 import type { Server, Connection } from "ssh2";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import net from "node:net";
@@ -12,6 +12,7 @@ import {
   SSH,
   createSSHConfig,
   createSSHHostAliases,
+  ensureSSHConfigInclude,
   normalizeSSHHostAlias,
 } from "../apps/desktop/src/main/ssh";
 import { vpsSchema, type VPS } from "../packages/domain/src/index";
@@ -114,6 +115,41 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 describe("真实 SSH 握手与跳板通道", () => {
+
+  it("在主 SSH 配置顶部幂等添加 Gungun Include，并保留原有内容", async () => {
+    const configPath = join(root, "ssh-config", "config");
+    mkdirSync(dirname(configPath), { recursive: true });
+    const original = "# Existing SSH settings\nHost personal\n  HostName 192.0.2.10\n  User root\n";
+    writeFileSync(configPath, original, { mode: 0o644 });
+
+    const first = await ensureSSHConfigInclude(configPath);
+    const expected = [
+      "# BEGIN Gungun managed include",
+      "Include ~/.ssh/gungun/config",
+      "# END Gungun managed include",
+      "",
+      original,
+    ].join("\n");
+    expect(first.added).toBe(true);
+    expect(first.path).toBe(configPath);
+    expect(readFileSync(configPath, "utf8")).toBe(expected);
+
+    const second = await ensureSSHConfigInclude(configPath);
+    expect(second.added).toBe(false);
+    expect(readFileSync(configPath, "utf8")).toBe(expected);
+  });
+
+  it("识别用户已经手动添加的 Gungun Include，不再插入重复项", async () => {
+    const configPath = join(root, "ssh-config-existing", "config");
+    mkdirSync(dirname(configPath), { recursive: true });
+    const original = "Include ~/.ssh/gungun/config\nHost personal\n  User root\n";
+    writeFileSync(configPath, original);
+
+    const result = await ensureSSHConfigInclude(configPath);
+    expect(result.added).toBe(false);
+    expect(readFileSync(configPath, "utf8")).toBe(original);
+  });
+
   it("使用 VPS 名称生成 SSH Host 别名，并让跳板引用同一别名", () => {
     const hk = { ...jumpVps, name: "hk", jumpId: null };
     const hk02 = { ...target, id: randomUUID(), name: "hk02", jumpId: null };

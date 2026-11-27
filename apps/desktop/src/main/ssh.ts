@@ -16,6 +16,50 @@ export function resolveSSHKeyPath(path: string) {
 }
 export const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
+export async function ensureSSHConfigInclude(
+  configPath = join(homedir(), ".ssh", "config"),
+  includePath = "~/.ssh/gungun/config",
+) {
+  const begin = "# BEGIN Gungun managed include";
+  const end = "# END Gungun managed include";
+  await mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
+
+  let existing = "";
+  let fileMode = 0o600;
+  try {
+    const current = await stat(configPath);
+    fileMode = current.mode & 0o777;
+    existing = await readFile(configPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const expectedPath = includePath.replace(/^~(?=\/)/, homedir());
+  const alreadyIncluded = existing.split(/\r?\n/).some((line) => {
+    const directive = line.trim().match(/^Include\s+(.+)$/i);
+    if (!directive) return false;
+    const targets = directive[1].match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+    return targets.some((target) => {
+      const unquoted = target.replace(/^["']|["']$/g, "");
+      return unquoted.replace(/^~(?=\/)/, homedir()) === expectedPath;
+    });
+  });
+
+  if (alreadyIncluded) return { path: configPath, includePath, added: false };
+
+  const newline = existing.includes("\r\n") ? "\r\n" : "\n";
+  const bom = existing.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const body = bom ? existing.slice(1) : existing;
+  const block = [begin, "Include " + includePath, end].join(newline);
+  const updated = body.length
+    ? bom + block + newline + newline + body
+    : bom + block + newline;
+
+  await writeFile(configPath, updated, { mode: fileMode });
+  await chmod(configPath, fileMode);
+  return { path: configPath, includePath, added: true };
+}
+
 export function normalizeSSHHostAlias(name: string) {
   const alias = name
     .trim()
@@ -335,10 +379,14 @@ export class SSH {
     const path = join(dir, "config");
     await writeFile(path, config, { mode: 0o600 });
     await chmod(path, 0o600);
+    const sshConfigPath = join(homedir(), ".ssh", "config");
+    const include = await ensureSSHConfigInclude(sshConfigPath);
     return {
       path,
+      sshConfigPath,
+      includeAdded: include.added,
       alias,
-      command: "ssh -F ~/.ssh/gungun/config " + alias,
+      command: "ssh " + alias,
     };
   }
   async localTailscale() {
