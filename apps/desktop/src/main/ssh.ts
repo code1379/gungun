@@ -104,10 +104,13 @@ export class SSH {
     input = "",
     timeoutMs = 120000,
     maxBytes = 16 * 1024 * 1024,
+    signal?: AbortSignal,
   ) {
+    if (signal?.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
     const c = await this.connect(vps);
     try {
       return await new Promise<string>((resolve, reject) => {
+        let streamRef: ClientChannel | undefined;
         let output = "";
         let err = "";
         let size = 0;
@@ -118,9 +121,16 @@ export class SSH {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           if (error) reject(error);
           else resolve(value ?? "");
         };
+        const onAbort = () => {
+          try { streamRef?.close(); } catch {}
+          finish(Object.assign(new Error("任务已取消，远程命令已中断"), { name: "AbortError" }));
+          c.close();
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
           finish(new Error(`SSH 命令超时（${timeoutMs} ms）：${command.slice(0, 500)}`));
           c.close();
@@ -130,6 +140,8 @@ export class SSH {
             finish(new Error(`无法启动远程命令：${error.message}`));
             return;
           }
+          streamRef = stream;
+          if (signal?.aborted) { onAbort(); return; }
           stream.on("data", (b: Buffer) => {
             size += b.length;
             if (size > maxBytes) {

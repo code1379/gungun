@@ -249,9 +249,13 @@ export class API {
       }
       case "installFq": {
         const v = s.get<VPS>("vps", id.parse(input));
-        return this.tasks.submit("安装 fq 与核心", v.id, (step) =>
-          this.orchestrator.install(v, step),
+        return this.tasks.submit("安装 fq 与核心", v.id, (step, signal) =>
+          this.orchestrator.install(v, step, signal),
         );
+      }
+      case "cancelTask": {
+        const q = z.object({ id }).parse(input);
+        return this.tasks.cancel(q.id);
       }
       case "syncVps": {
         const v = s.get<VPS>("vps", id.parse(input));

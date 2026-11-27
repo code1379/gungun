@@ -184,7 +184,7 @@ export interface TestResult {
 }
 export interface TaskStep {
   name: string;
-  state: "running" | "success" | "failed";
+  state: "running" | "success" | "failed" | "cancelled" | "fallback";
   message?: string;
   transfer?: {
     transferred: number;
@@ -199,7 +199,7 @@ export interface Task {
   id: string;
   type: string;
   vpsId: string | null;
-  state: "queued" | "running" | "success" | "failed" | "interrupted";
+  state: "queued" | "running" | "cancelling" | "cancelled" | "success" | "failed" | "interrupted";
   progress: number;
   steps: TaskStep[];
   error: string | null;
@@ -219,6 +219,9 @@ export const settingsSchema = z.object({
   cloudflareKey: z.string().default(""),
   sshKeyPath: z.string().default("~/.ssh/id_ed25519_gungun"),
   acmeEmail: z.string().default(""),
+  fqDownloadMode: z.enum(["auto", "release", "sftp"]).default("auto"),
+  fqDownloadMinSpeedKBps: z.number().int().min(16).max(10240).default(128),
+  fqDownloadSlowSeconds: z.number().int().min(5).max(60).default(15),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 export interface Snapshot {

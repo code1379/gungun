@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
   serviceSchema,
@@ -15,7 +17,7 @@ import { Cloudflare, compensate } from "./cloudflare";
 import { Certificates } from "./certificates";
 import type { Store } from "./store";
 import type { SSH } from "./ssh";
-import type { Step } from "./tasks";
+import { StepFallbackError, type Step } from "./tasks";
 import { shellQuote } from "./ssh";
 const protocolDomainPrefix: Record<Service["protocol"], string> = {
   hysteria2: "hy2",
@@ -70,8 +72,11 @@ export class Orchestrator {
   ) {
     this.certificates = new Certificates(store, ssh, certDir);
   }
-  async install(vps: VPS, step: Step) {
-    await step("连接 VPS 并识别 CPU", () => this.ssh.test(vps));
+  async install(vps: VPS, step: Step, signal: AbortSignal) {
+    await step("连接 VPS 并识别 CPU", (_report, stepSignal) => this.ssh.test(vps).then((result) => {
+      if (stepSignal.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
+      return result;
+    }));
     const arch = (await this.ssh.run(vps, "uname -m")).trim();
     const target =
       arch === "x86_64"
@@ -80,25 +85,81 @@ export class Orchestrator {
           ? "arm64"
           : null;
     if (!target) throw new Error(`不支持的 CPU：${arch}`);
+    const local = join(this.resources, `fq-linux-${target}`);
     const remote = `/tmp/gungun-fq-${randomUUID()}`;
-    await step("上传 fq", (reportTransfer) =>
-      this.ssh.upload(
-        vps,
-        join(this.resources, `fq-linux-${target}`),
-        remote,
-        reportTransfer,
-      ),
-    );
-    await step("安装 fq 与服务单元", async () => {
+    const staged = `/usr/local/bin/.fq-${randomUUID()}.new`;
+    const settings = this.store.settings();
+    const mode = settings.fqDownloadMode || "auto";
+    let installed = false;
+    try {
+      const binary = await readFile(local);
+      const digest = createHash("sha256").update(binary).digest("hex");
+      let releaseVersion = "dev";
+      try {
+        const output = execFileSync(local, ["version"], { encoding: "utf8", timeout: 5000 });
+        releaseVersion = String(JSON.parse(output).version || "dev");
+      } catch { /* Development build: use SFTP. */ }
+      const canUseRelease = releaseVersion !== "dev" && /^v?\d+\.\d+\.\d+/.test(releaseVersion);
+      if (mode !== "sftp" && canUseRelease) {
+        const tag = releaseVersion.startsWith("v") ? releaseVersion : `v${releaseVersion}`;
+        const asset = `fq-linux-${target}`;
+        const url = `https://github.com/code1379/gungun/releases/download/${tag}/${asset}`;
+        const speedLimit = Math.max(16, settings.fqDownloadMinSpeedKBps || 128) * 1024;
+        const speedTime = Math.max(5, settings.fqDownloadSlowSeconds || 15);
+        const command = [
+          "set -eu",
+          `tmp=${shellQuote(remote)}`,
+          "trap 'rm -f \"$tmp\"' EXIT",
+          `curl --fail --location --silent --show-error --speed-limit ${speedLimit} --speed-time ${speedTime} ${shellQuote(url)} -o \"$tmp\"`,
+          `echo ${shellQuote(digest + "  ")}\"$tmp\" | sha256sum -c -`,
+          "chmod 700 \"$tmp\"",
+          `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 \"$tmp\" ${shellQuote(staged)}`,
+          `${vps.username === "root" ? "" : "sudo -n "}mv -f ${shellQuote(staged)} /usr/local/bin/fq`,
+          "rm -f \"$tmp\"",
+          "trap - EXIT",
+        ].join(" && ");
+        try {
+          await step("VPS 直接下载 GitHub Release", async (_report, stepSignal) => {
+            if (stepSignal.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
+            await this.ssh.run(vps, command, "", 10 * 60 * 1000, 16 * 1024 * 1024, stepSignal);
+          });
+          installed = true;
+        } catch (error) {
+          if (signal.aborted || mode === "release") throw error;
+          await step("Release 下载失败或速度过慢，切换 SFTP", async () => {
+            throw new StepFallbackError(`切换到本机 SFTP：${String(error)}`);
+          });
+        }
+      } else if (mode === "release") {
+        throw new Error("当前是开发构建，没有对应的正式 GitHub Release 版本；请切换为自动或 SFTP");
+      }
+
+      if (!installed) {
+        await step("本机 SFTP 上传 fq", (reportTransfer, stepSignal) =>
+          this.ssh.upload(vps, local, remote, reportTransfer, stepSignal),
+        );
+        await step("校验并原子安装 fq", async (_report, stepSignal) => {
+          if (stepSignal.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
+          const sudo = vps.username === "root" ? "" : "sudo -n ";
+          await this.ssh.run(
+            vps,
+            `${sudo}install -m 0755 ${shellQuote(remote)} ${shellQuote(staged)} && ${sudo}mv -f ${shellQuote(staged)} /usr/local/bin/fq && rm -f ${shellQuote(remote)}`,
+          );
+        });
+      }
+      await step("安装 fq 服务单元", () => this.ssh.fq(vps, "install"));
+      await step("安装并校验 sing-box", () =>
+        this.ssh.fq(vps, "core update sing-box", undefined, 10 * 60 * 1000),
+      );
+    } finally {
+      // Best-effort cleanup after cancellation, failed transfer, or install.
       await this.ssh.run(
         vps,
-        `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 ${shellQuote(remote)} /usr/local/bin/fq.next && ${vps.username === "root" ? "" : "sudo -n "}mv -f /usr/local/bin/fq.next /usr/local/bin/fq && rm -f ${shellQuote(remote)}`,
-      );
-      return this.ssh.fq(vps, "install");
-    });
-    await step("安装并校验 sing-box", () =>
-      this.ssh.fq(vps, "core update sing-box", undefined, 10 * 60 * 1000),
-    );
+        `rm -f ${shellQuote(remote)} ${shellQuote(staged)}`,
+        "",
+        15000,
+      ).catch(() => {});
+    }
   }
   async sync(vps: VPS, step: Step) {
     const data = await step("SSH 读取 fq export", () =>

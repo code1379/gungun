@@ -38,7 +38,7 @@ export class Store {
  CREATE TABLE IF NOT EXISTS host_keys(address TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
  `);
     for (const t of this.all<Task>("tasks"))
-      if (t.state === "running" || t.state === "queued")
+      if (t.state === "running" || t.state === "queued" || t.state === "cancelling")
         this.putRaw("tasks", {
           ...t,
           state: "interrupted",

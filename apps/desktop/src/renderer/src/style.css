@@ -1254,6 +1254,17 @@
     margin-bottom: 12px;
     overflow: hidden;
   }
+  .task-card-layout { display: flex; align-items: flex-start; gap: 8px; }
+  .task-card-disclosure { min-width: 0; flex: 1; }
+  .task-card-actions { flex-shrink: 0; padding: 14px 16px 0 0; }
+  .task-step-fallback-message {
+    margin-top: 6px;
+    color: var(--warning, #b7791f);
+    font-size: 11px;
+    word-break: break-word;
+  }
+  .step-fallback .step-dot { background: var(--warning, #b7791f); }
+  .step-cancelled .step-dot { background: var(--muted-foreground); }
   .task-card-summary {
     display: block;
     list-style: none;

@@ -1,6 +1,6 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, XCircle } from "lucide-react";
 import { useApp } from "../api";
-import { Badge, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
+import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
 
 function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
@@ -16,13 +16,15 @@ function formatBytes(value: number) {
 const labels = {
   queued: "排队中",
   running: "执行中",
+  cancelling: "正在中断",
+  cancelled: "已取消",
   success: "成功",
   failed: "失败",
-  interrupted: "已中断",
+  interrupted: "应用退出时中断",
 };
 
 export default function Tasks() {
-  const { data } = useApp();
+  const { data, call, run } = useApp();
   if (!data) return null;
 
   return (
@@ -33,86 +35,117 @@ export default function Tasks() {
       />
       {data.tasks.length ? (
         <div className="tasks-list">
-          {[...data.tasks].reverse().map((task) => (
-            <details className="task-card" key={task.id}>
-              <summary className="task-card-summary">
-                <div className="task-summary-main">
-                  <div className="task-summary-title">
-                    <h2>{task.type}</h2>
-                    <p>
-                      {data.vps.find((vps) => vps.id === task.vpsId)?.name || "本机任务"}
-                      {" · "}
-                      {new Date(task.createdAt).toLocaleString()}
-                    </p>
-                    {task.summary && (
-                      <p className="task-summary-description">{task.summary}</p>
-                    )}
-                  </div>
-                  <div className="task-summary-meta">
-                    <Badge
-                      tone={
-                        task.state === "success"
-                          ? "good"
-                          : ["failed", "interrupted"].includes(task.state)
-                            ? "bad"
-                            : "blue"
-                      }
-                    >
-                      {labels[task.state]}
-                    </Badge>
-                    <span className="task-expand-label">
-                      执行详情
-                      <ChevronDown size={15} />
-                    </span>
-                  </div>
-                </div>
-                {task.state === "running" && (
-                  <Progress
-                    value={task.progress}
-                    max={100}
-                    aria-label="任务进度"
-                  />
-                )}
-              </summary>
-              <div className="task-card-details">
-                <div className="task-progress-meta">
-                  <span>执行进度</span>
-                  <strong>{task.progress}%</strong>
-                </div>
-                <Progress value={task.progress} max={100} aria-label="任务进度" />
-                <div className="task-steps">
-                  {task.steps.map((step, index) => (
-                    <div key={index} className={`task-step step-${step.state}`}>
-                      <span className="step-dot" />
-                      <div>
-                        <span>{step.name}</span>
-                        {step.transfer && (
-                          <div className="task-transfer">
-                            <div className="task-transfer-meta">
-                              <span>
-                                {formatBytes(step.transfer.transferred)} /{" "}
-                                {formatBytes(step.transfer.total)}
-                              </span>
-                              <strong>{step.transfer.percent}%</strong>
-                            </div>
-                            <Progress
-                              value={step.transfer.percent}
-                              max={100}
-                              aria-label="文件上传进度"
-                            />
-                          </div>
-                        )}
-                        {step.message && (
-                          <p className="error-text">{step.message}</p>
-                        )}
+          {[...data.tasks].reverse().map((task) => {
+            const cancellable = ["queued", "running", "cancelling"].includes(task.state);
+            return (
+              <section className="task-card" key={task.id}>
+                <div className="task-card-layout">
+                  <details className="task-card-disclosure">
+                    <summary className="task-card-summary">
+                      <div className="task-summary-main">
+                        <div className="task-summary-title">
+                          <h2>{task.type}</h2>
+                          <p>
+                            {data.vps.find((vps) => vps.id === task.vpsId)?.name || "本机任务"}
+                            {" · "}
+                            {new Date(task.createdAt).toLocaleString()}
+                          </p>
+                          {task.summary && (
+                            <p className="task-summary-description">{task.summary}</p>
+                          )}
+                        </div>
+                        <div className="task-summary-meta">
+                          <Badge
+                            tone={
+                              task.state === "success"
+                                ? "good"
+                                : ["failed", "interrupted"].includes(task.state)
+                                  ? "bad"
+                                  : "blue"
+                            }
+                          >
+                            {labels[task.state]}
+                          </Badge>
+                          <span className="task-expand-label">
+                            执行详情
+                            <ChevronDown size={15} />
+                          </span>
+                        </div>
                       </div>
+                      {["queued", "running", "cancelling"].includes(task.state) && (
+                        <Progress
+                          value={task.progress}
+                          max={100}
+                          aria-label="任务进度"
+                        />
+                      )}
+                    </summary>
+                    <div className="task-card-details">
+                      <div className="task-progress-meta">
+                        <span>执行进度</span>
+                        <strong>{task.progress}%</strong>
+                      </div>
+                      <Progress value={task.progress} max={100} aria-label="任务进度" />
+                      <div className="task-steps">
+                        {task.steps.map((step, index) => (
+                          <div key={index} className={`task-step step-${step.state}`}>
+                            <span className="step-dot" />
+                            <div>
+                              <span>{step.name}</span>
+                              {step.transfer && (
+                                <div className="task-transfer">
+                                  <div className="task-transfer-meta">
+                                    <span>
+                                      {formatBytes(step.transfer.transferred)} /{" "}
+                                      {formatBytes(step.transfer.total)}
+                                    </span>
+                                    <strong>{step.transfer.percent}%</strong>
+                                  </div>
+                                  <Progress
+                                    value={step.transfer.percent}
+                                    max={100}
+                                    aria-label="文件传输进度"
+                                  />
+                                </div>
+                              )}
+                              {step.message && (
+                                <p className={step.state === "fallback" ? "task-step-fallback-message" : "error-text"}>
+                                  {step.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {task.error && <ErrorView error={task.error} />}
                     </div>
-                  ))}
+                  </details>
+                  {cancellable && (
+                    <div className="task-card-actions">
+                      <Button
+                        size="sm"
+                        variant={task.state === "queued" ? "secondary" : "danger"}
+                        disabled={task.state === "cancelling"}
+                        onClick={() => {
+                          void run(
+                            () => call("cancelTask", { id: task.id }),
+                            task.state === "queued" ? "任务已取消" : "已发送中断请求",
+                          );
+                        }}
+                      >
+                        <XCircle size={14} />
+                        {task.state === "queued"
+                          ? "取消任务"
+                          : task.state === "cancelling"
+                            ? "正在中断…"
+                            : "中断任务"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                {task.error && <ErrorView error={task.error} />}
-              </div>
-            </details>
-          ))}
+              </section>
+            );
+          })}
         </div>
       ) : (
         <Empty title="所有任务，都在这里">

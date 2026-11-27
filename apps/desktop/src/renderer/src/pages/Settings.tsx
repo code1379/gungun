@@ -207,6 +207,48 @@ export default function Settings() {
           )}
         </section>
         <section className="section settings-section">
+          <h2>远程安装包下载</h2>
+          <p>控制 fq 安装时的下载来源。自动模式优先让 VPS 从正式 GitHub Release 下载，失败或速度低于阈值时回退到本机 SFTP。</p>
+          <div className="form-grid">
+            <Field label="fq 下载方式">
+              <Select
+                value={values.fqDownloadMode}
+                onValueChange={(value) =>
+                  update("fqDownloadMode", value as SettingsType["fqDownloadMode"])
+                }
+              >
+                <option value="auto">自动（Release 优先，低速 / 失败回退 SFTP）</option>
+                <option value="release">仅 VPS 下载 GitHub Release</option>
+                <option value="sftp">仅本机 SFTP 上传</option>
+              </Select>
+            </Field>
+            <Field
+              label="Release 最低速度（KB/s）"
+              hint="自动模式下，持续低于此速度达到检测时长就切换到 SFTP。"
+            >
+              <Input
+                type="number"
+                min={16}
+                max={10240}
+                value={values.fqDownloadMinSpeedKBps}
+                onChange={(e) => update("fqDownloadMinSpeedKBps", Number(e.target.value))}
+              />
+            </Field>
+            <Field
+              label="低速检测时长（秒）"
+              hint="达到该时长后仍低于最低速度，自动终止 Release 下载并回退。"
+            >
+              <Input
+                type="number"
+                min={5}
+                max={60}
+                value={values.fqDownloadSlowSeconds}
+                onChange={(e) => update("fqDownloadSlowSeconds", Number(e.target.value))}
+              />
+            </Field>
+          </div>
+        </section>
+        <section className="section settings-section">
           <h2>测速</h2>
           <div className="form-grid">
             <Field label="全局最大并发">

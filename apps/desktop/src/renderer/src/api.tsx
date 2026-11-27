@@ -84,11 +84,14 @@ export function Provider({ children }: { children: ReactNode }) {
     const next: Record<string, string> = {};
     for (const task of data.tasks) {
       const previous = previousTaskStates.current[task.id];
-      const finished = ["success", "failed", "interrupted"].includes(task.state);
-      if (previous && ["queued", "running"].includes(previous) && finished) {
+      const finished = ["success", "failed", "cancelled", "interrupted"].includes(task.state);
+      if (previous && ["queued", "running", "cancelling"].includes(previous) && finished) {
         if (task.state === "failed" || task.state === "interrupted") {
           setMessage("");
           setError(`${task.type}${task.state === "failed" ? "失败" : "已中断"}：${(task.error || "任务未能完成").slice(-1200)}`);
+        } else if (task.state === "cancelled") {
+          setError("");
+          setMessage(`${task.type} 已取消`);
         } else {
           setError("");
           setMessage(`${task.type} 已完成`);

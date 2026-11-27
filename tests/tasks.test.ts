@@ -103,3 +103,54 @@ it("任务步骤持续保存文件传输百分比和字节数", async () => {
     rmSync(path, { recursive: true, force: true });
   }
 });
+
+
+it("排队中的任务可以立即取消且不会执行", async () => {
+  const path = mkdtempSync(join(tmpdir(), "gungun-task-cancel-"));
+  const store = new Store(join(path, "db"));
+  const center = new TaskCenter(store, () => {}, 1);
+  const blocker = deferred();
+  let secondRan = false;
+  try {
+    center.submit("blocker", "same-vps", async () => blocker.promise);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const queued = center.submit("queued", "same-vps", async () => {
+      secondRan = true;
+    });
+    expect(center.cancel(queued)).toBe(true);
+    expect(store.get<Task>("tasks", queued).state).toBe("cancelled");
+    blocker.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(secondRan).toBe(false);
+  } finally {
+    blocker.resolve();
+    store.close();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+it("运行中的任务收到 AbortSignal 并标记为已取消", async () => {
+  const path = mkdtempSync(join(tmpdir(), "gungun-task-abort-"));
+  const store = new Store(join(path, "db"));
+  const center = new TaskCenter(store, () => {}, 1);
+  const started = deferred();
+  const cancelled = deferred();
+  try {
+    const id = center.submit("abortable", "abort-vps", async (_step, signal) => {
+      started.resolve();
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      cancelled.resolve();
+    });
+    await started.promise;
+    expect(center.cancel(id)).toBe(true);
+    await cancelled.promise;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(store.get<Task>("tasks", id).state).toBe("cancelled");
+  } finally {
+    store.close();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
