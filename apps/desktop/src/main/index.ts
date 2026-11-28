@@ -1,10 +1,11 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, dialog, type IpcMainInvokeEvent } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ClientChannel } from "ssh2";
 import type { VPS } from "@gungun/domain";
 import { Store } from "./store";
 import { API } from "./api";
+import { loadRenderer } from "./renderer-load";
 import { z } from "zod";
 const here = fileURLToPath(new URL(".", import.meta.url));
 let store: Store;
@@ -47,12 +48,26 @@ function openWindow(type = "main", id = "") {
     sessions.delete(contentsId);
     windows.delete(contentsId);
   });
-  const query = { view: type, id };
-  if (process.env.ELECTRON_RENDERER_URL)
-    void win.loadURL(
-      `${process.env.ELECTRON_RENDERER_URL}?${new URLSearchParams(query)}`,
-    );
-  else void win.loadFile(join(here, "../renderer/index.html"), { query });
+  let reported = false;
+  const reportLoadError = (detail: string) => {
+    if (reported || win.isDestroyed()) return;
+    reported = true;
+    dialog.showErrorBox("Gungun 界面加载失败", `${detail}\n\n请退出应用后重新执行 pnpm package:mac:dir，再打开新生成的应用。无需删除本机数据库。`);
+  };
+  win.webContents.on("did-fail-load", (_event, code, description, url, mainFrame) => {
+    if (mainFrame && code !== -3) reportLoadError(`页面加载失败（${code}）：${description}\n${url}`);
+  });
+  win.webContents.on("preload-error", (_event, path, error) => reportLoadError(`预加载脚本失败：${path}\n${error.message}`));
+  win.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason !== "clean-exit") reportLoadError(`界面进程退出：${details.reason}（${details.exitCode}）`);
+  });
+  void loadRenderer(win, {
+    packaged: app.isPackaged,
+    mainDirectory: here,
+    developmentURL: process.env.ELECTRON_RENDERER_URL,
+    type,
+    id,
+  }).catch((error: unknown) => reportLoadError(error instanceof Error ? error.message : String(error)));
   return win;
 }
 function trusted(event: IpcMainInvokeEvent) {

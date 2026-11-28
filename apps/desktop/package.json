@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && node ../../scripts/create-icon.mjs",
-    "package:mac": "electron-builder --mac --arm64 --publish never",
-    "package:mac:dir": "electron-builder --mac dir --arm64 --publish never"
+    "package:mac": "pnpm run build && electron-builder --mac --arm64 --publish never",
+    "package:mac:dir": "pnpm run build && electron-builder --mac dir --arm64 --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
@@ -89,6 +89,7 @@
     },
     "afterSign": "../../scripts/notarize.cjs",
     "npmRebuild": false,
-    "afterPack": "../../scripts/prepare-macos-helper.cjs"
+    "afterPack": "../../scripts/prepare-macos-helper.cjs",
+    "beforePack": "../../scripts/check-desktop-build.mjs"
   }
 }
