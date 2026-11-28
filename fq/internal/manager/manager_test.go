@@ -584,6 +584,34 @@ func TestWebsiteListenerTransportCompatibility(t *testing.T) {
 	}
 }
 
+func TestFilterServiceLogLinesFindsOpenRCCrashAndOOMDiagnostics(t *testing.T) {
+	input := []byte(strings.Join([]string{
+		"other-service started",
+		"gungun-sing-box: failed to bind listener: address already in use",
+		"kernel: Out of memory: Killed process 1234 (sing-box)",
+		"unrelated message",
+	}, "\n"))
+	got := string(filterServiceLogLines(input, "gungun-sing-box", 20))
+	for _, expected := range []string{
+		"failed to bind listener",
+		"Out of memory: Killed process",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("crash diagnostics missing %q: %s", expected, got)
+		}
+	}
+	if strings.Contains(got, "other-service started") || strings.Contains(got, "unrelated message") {
+		t.Fatalf("unrelated log lines should be filtered: %s", got)
+	}
+}
+
+func TestTailLogLinesKeepsOnlyNewestEntries(t *testing.T) {
+	got := string(tailLogLines([]byte("one\ntwo\nthree\nfour\n"), 2))
+	if got != "three\nfour" {
+		t.Fatalf("tailLogLines = %q", got)
+	}
+}
+
 func TestOpenRCServiceActionUsesRunlevel(t *testing.T) {
 	m := fakeManager(t)
 	m.InitSystem = "openrc"
