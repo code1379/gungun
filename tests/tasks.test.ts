@@ -10,6 +10,43 @@ const deferred = () => {
   const promise = new Promise<void>((r) => (resolve = r));
   return { promise, resolve };
 };
+it("失败任务可重新执行，并保留原失败记录", async () => {
+  const path = mkdtempSync(join(tmpdir(), "gungun-task-retry-"));
+  const store = new Store(join(path, "db"));
+  const center = new TaskCenter(store, () => {}, 2);
+  let attempts = 0;
+  const createRun = () => async () => {
+    attempts++;
+    if (attempts === 1) throw new Error("temporary failure");
+    return { retried: true };
+  };
+  try {
+    const originalId = center.submit(
+      "retryable deployment",
+      "retry-vps",
+      createRun(),
+      "retry summary",
+      createRun,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(store.get<Task>("tasks", originalId).state).toBe("failed");
+    expect(center.canRetry(originalId)).toBe(true);
+
+    const retryId = center.retry(originalId);
+    expect(retryId).not.toBe(originalId);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(store.get<Task>("tasks", originalId).state).toBe("failed");
+    expect(store.get<Task>("tasks", retryId).state).toBe("success");
+    expect(store.get<Task>("tasks", retryId).output).toEqual({ retried: true });
+    expect(center.canRetry(retryId)).toBe(false);
+    expect(attempts).toBe(2);
+  } finally {
+    store.close();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
 it("并行任务共用全局并发上限，失败也释放槽位", async () => {
   let active = 0,
     maximum = 0;
