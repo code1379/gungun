@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, XCircle } from "lucide-react";
+import { ChevronDown, RefreshCw, XCircle } from "lucide-react";
 import { useApp } from "../api";
 import { Badge, Button, Empty, ErrorView, PageHeader, Progress } from "../components/ui";
 
@@ -27,6 +27,7 @@ const labels = {
 export default function Tasks() {
   const { data, call, run } = useApp();
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
+  const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
   if (!data) return null;
 
   return (
@@ -81,6 +82,29 @@ export default function Tasks() {
                           >
                             {labels[task.state]}
                           </Badge>
+                          {task.state === "failed" && task.canRetry && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="task-retry-button"
+                              loading={retryingTaskId === task.id}
+                              disabled={retryingTaskId !== null}
+                              onClick={() => {
+                                void run(async () => {
+                                  setRetryingTaskId(task.id);
+                                  try {
+                                    const retryId = await call<string>("retryTask", { id: task.id });
+                                    setExpandedTasks((current) => ({ ...current, [retryId]: true }));
+                                  } finally {
+                                    setRetryingTaskId(null);
+                                  }
+                                }, "已重新提交任务，原失败记录已保留");
+                              }}
+                            >
+                              <RefreshCw size={14} />
+                              重新执行
+                            </Button>
+                          )}
                           {cancellable && (
                             <div className="task-card-actions">
                               <Button
