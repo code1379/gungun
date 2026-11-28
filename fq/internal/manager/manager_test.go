@@ -612,6 +612,37 @@ func TestTailLogLinesKeepsOnlyNewestEntries(t *testing.T) {
 	}
 }
 
+func TestVerifyOnceIncludesServiceNameAndLogsWhenServiceCrashed(t *testing.T) {
+	m := fakeManager(t)
+	m.InitSystem = "systemd"
+	serviceLog := "sing-box: failed to bind listener: address already in use"
+	m.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == "systemctl" && len(args) >= 2 && args[0] == "is-active" {
+			return []byte("failed"), errors.New("exit status 3")
+		}
+		if name == "journalctl" {
+			return []byte(serviceLog), nil
+		}
+		return nil, nil
+	}
+	state := fixture()
+	state.Services = []Service{service("vless-reality", 20001)}
+	err := m.verifyOnce(state)
+	if err == nil {
+		t.Fatal("expected crashed service verification to fail")
+	}
+	for _, expected := range []string{
+		"gungun-sing-box",
+		"exit status 3",
+		"recent service logs",
+		"failed to bind listener",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("verification error missing %q: %v", expected, err)
+		}
+	}
+}
+
 func TestOpenRCServiceActionUsesRunlevel(t *testing.T) {
 	m := fakeManager(t)
 	m.InitSystem = "openrc"
