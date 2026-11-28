@@ -1319,6 +1319,7 @@
     flex-shrink: 0;
   }
   .task-cancel-button { color: var(--danger); }
+  .task-retry-button { color: var(--primary); }
   .task-expand-label {
     display: inline-flex;
     align-items: center;
