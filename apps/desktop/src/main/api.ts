@@ -76,8 +76,16 @@ export class API {
     const s = this.store;
     let value: unknown;
     switch (operation) {
-      case "snapshot":
-        return s.snapshot();
+      case "snapshot": {
+        const snapshot = s.snapshot();
+        return {
+          ...snapshot,
+          tasks: snapshot.tasks.map((task) => ({
+            ...task,
+            canRetry: this.tasks.canRetry(task.id),
+          })),
+        };
+      }
       case "openExternal": {
         const url = z.string().url().max(2048).parse(input);
         const parsed = new URL(url);
@@ -250,19 +258,22 @@ export class API {
       }
       case "installFq": {
         const v = s.get<VPS>("vps", id.parse(input));
-        return this.tasks.submit("安装 fq 与核心", v.id, (step, signal) =>
-          this.orchestrator.install(v, step, signal),
-        );
+        const createRun = () => (step: Step, signal: AbortSignal) =>
+          this.orchestrator.install(v, step, signal);
+        return this.tasks.submit("安装 fq 与核心", v.id, createRun(), undefined, createRun);
       }
       case "cancelTask": {
         const q = z.object({ id }).parse(input);
         return this.tasks.cancel(q.id);
       }
+      case "retryTask": {
+        const q = z.object({ id }).parse(input);
+        return this.tasks.retry(q.id);
+      }
       case "syncVps": {
         const v = s.get<VPS>("vps", id.parse(input));
-        return this.tasks.submit("手动同步 VPS 节点", v.id, (step) =>
-          this.orchestrator.sync(v, step),
-        );
+        const createRun = () => (step: Step) => this.orchestrator.sync(v, step);
+        return this.tasks.submit("手动同步 VPS 节点", v.id, createRun(), undefined, createRun);
       }
       case "deploy": {
         const q = z
@@ -309,13 +320,20 @@ export class API {
               `${protocolNames[service.protocol]} · ${accessNames[service.access]}`,
           )
           .join("、");
+        const createRun = () => (step: Step, signal: AbortSignal) =>
+          this.orchestrator.deploy(
+            v,
+            services ? structuredClone(services) : undefined,
+            parsed.website ? structuredClone(parsed.website) : undefined,
+            step,
+            signal,
+          );
         return this.tasks.submit(
-          parsed.website
-            ? "部署网站"
-            : `批量部署协议服务（${services?.length || 0} 项）`,
+          parsed.website ? "部署网站" : `批量部署协议服务（${services?.length || 0} 项）`,
           v.id,
-          (step, signal) => this.orchestrator.deploy(v, services, parsed.website, step, signal),
+          createRun(),
           summary,
+          createRun,
         );
       }
       case "deployCamouflage": {
@@ -326,11 +344,13 @@ export class API {
             ["queued", "running", "cancelling"].includes(task.state),
         );
         if (active) throw new Error(`${v.name} 的共享伪装站任务正在执行，请勿重复提交`);
+        const createRun = () => (step: Step) => this.orchestrator.deployCamouflage(v, step);
         return this.tasks.submit(
           "部署共享伪装站",
           v.id,
-          (step) => this.orchestrator.deployCamouflage(v, step),
+          createRun(),
           `共享伪装站：web-${v.namespace}.${v.zoneName}`,
+          createRun,
         );
       }
       case "remoteRead": {
@@ -380,7 +400,7 @@ export class API {
           })
           .parse(input);
         const v = s.get<VPS>("vps", q.vpsId);
-        return this.tasks.submit(q.action, v.id, (step) =>
+        const createRun = () => (step: Step) =>
           step(q.action, async () => {
             if (q.action === "renew")
               return this.orchestrator.certificates.issue(v);
@@ -392,17 +412,16 @@ export class API {
               );
             }
             return this.ssh.fq(v, q.action);
-          }),
-        );
+          });
+        return this.tasks.submit(q.action, v.id, createRun(), undefined, createRun);
       }
       case "removeRemote": {
         const q = z
           .object({ vpsId: id, kind: z.enum(["service", "website"]), id })
           .parse(input);
         const v = s.get<VPS>("vps", q.vpsId);
-        return this.tasks.submit("删除远程服务", v.id, (step) =>
-          this.orchestrator.remove(v, q.kind, q.id, step),
-        );
+        const createRun = () => (step: Step) => this.orchestrator.remove(v, q.kind, q.id, step);
+        return this.tasks.submit("删除远程服务", v.id, createRun(), undefined, createRun);
       }
       case "importSubscription": {
         const q = z
