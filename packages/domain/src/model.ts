@@ -210,6 +210,8 @@ export interface Task {
   updatedAt: string;
 }
 export const settingsSchema = z.object({
+  localProxyPort: z.number().int().min(1024).max(65535).default(10808),
+  networkServiceId: z.string().default(""),
   theme: z.enum(["system", "light", "dark"]).default("system"),
   concurrency: z.number().int().min(1).max(50).default(10),
   latencyUrl: z.url().default("https://www.google.com/generate_204"),
@@ -228,6 +230,7 @@ export const settingsSchema = z.object({
 });
 export type Settings = z.infer<typeof settingsSchema>;
 export interface Snapshot {
+  activeProxy?: { kind: "node" | "chain"; id: string } | null;
   vps: VPS[];
   nodes: ProxyNode[];
   chains: Chain[];

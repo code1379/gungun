@@ -1546,3 +1546,9 @@
     scroll-behavior: auto !important;
   }
 }
+
+.cf-resource-header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.cf-resource-header .field { min-width: 210px; margin: 0; }
+.cf-orange { color: #e67e22; }
+.proxy-bar { position: relative; flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 20px; font-size: 12px; }
+.proxy-bar-error { width: 100%; color: var(--destructive); margin: 0; overflow-wrap: anywhere; }

@@ -163,7 +163,7 @@ export default function Deploy() {
     const id = portAssignmentKey(protocol, access);
     setPortAssignments((current) => ({
       ...current,
-      [id]: { port: 0, publicPort: 0, separatePublicPort: false, ...current[id], [key]: value },
+      [id]: { ...(current[id] || { port: 0, publicPort: 0, separatePublicPort: false }), [key]: value },
     }));
   };
   const selectedCombinations = selectedProtocols.flatMap((protocol) =>
@@ -365,7 +365,7 @@ export default function Deploy() {
                     >
                       {installingFq ? "正在加入任务…" : "安装 fq"}
                     </Button>
-                    <Button variant="outline" loading={remoteStatus === "loading"} disabled={remoteStatus === "loading"} onClick={() => readRemote(vps.id)}>
+                    <Button variant="outline" onClick={() => readRemote(vps.id)}>
                       重新读取
                     </Button>
                   </div>
@@ -380,7 +380,7 @@ export default function Deploy() {
             ) : vps && remoteStatus === "error" ? (
               <Empty
                 title="读取 VPS 配置失败"
-                action={<Button loading={remoteStatus === "loading"} disabled={remoteStatus === "loading"} onClick={() => readRemote(vps.id)}>重试</Button>}
+                action={<Button onClick={() => readRemote(vps.id)}>重试</Button>}
               >
                 {remoteError}
               </Empty>
@@ -424,7 +424,7 @@ export default function Deploy() {
                       const config = serviceConfigs[protocol];
                       const existing = remote?.services.find((item) => item.protocol === protocol && item.access === access);
                       const assignment = portAssignments[portAssignmentKey(protocol, access)];
-                      let port = assignment?.port || existing?.port || 0;
+                      const port = assignment?.port || existing?.port || 0;
                       if (!port && vps.kind === "nat") throw new Error(protocolLabels[protocol] + "：请填写内部监听端口");
                       const listener = portKey(transportForProtocol(protocol), port);
                       if (port) {

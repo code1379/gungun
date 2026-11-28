@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from "electron";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ClientChannel } from "ssh2";
 import type { VPS } from "@gungun/domain";
@@ -82,7 +82,8 @@ if (!app.requestSingleInstanceLock()) {
     const resources = app.isPackaged
       ? join(process.resourcesPath, "bin")
       : join(app.getAppPath(), "../../resources/bin");
-    api = new API(store, notify, resources, data, openWindow);
+    api = new API(store, notify, resources, data, openWindow, app.isPackaged && process.platform === "darwin" ? join(dirname(app.getPath("exe")), "gungun-proxy-helper") : undefined);
+    void api.proxy.initialize();
     ipcMain.handle("invoke", async (event, op: unknown, input: unknown) => {
       trusted(event);
       const operation = z.string().max(64).parse(op);
@@ -210,9 +211,15 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", () => {
+  let quitting = false;
+  app.on("before-quit", (event) => {
+    if (quitting) return;
+    event.preventDefault();
     for (const s of sessions.values()) s.close();
-    store?.close();
+    void api?.proxy.shutdown().catch((error: unknown) => {
+      console.error("系统代理退出恢复失败；保留特权辅助程序恢复记录：", String(error));
+    }).finally(() => { quitting = true; store?.close(); app.quit(); });
+    if (!api) { quitting = true; app.quit(); }
   });
 }
 

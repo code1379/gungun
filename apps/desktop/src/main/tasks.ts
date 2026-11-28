@@ -110,7 +110,7 @@ export class TaskCenter {
     task.state = "running";
     this.save(task);
 
-    const step: Step = async (name, fn) => {
+    const step: Step = async <T>(name: string, fn: (reportTransfer: TransferReporter, signal: AbortSignal) => Promise<T>): Promise<T> => {
       if (signal.aborted) throw abortError();
       task.steps.push({ name, state: "running", at: new Date().toISOString() });
       const index = task.steps.length - 1;
@@ -139,7 +139,8 @@ export class TaskCenter {
           task.steps[index].state = "fallback";
           task.steps[index].message = error.message;
           this.save(task);
-          return undefined;
+          // Fallback steps are notifications with a void result.
+          return undefined as T;
         }
         if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
           task.steps[index].state = "cancelled";

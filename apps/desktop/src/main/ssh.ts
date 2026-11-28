@@ -239,7 +239,7 @@ export class SSH {
           else resolve(value ?? "");
         };
         const onAbort = () => {
-          try { streamRef?.close(); } catch {}
+          try { streamRef?.close(); } catch { /* Channel already closed. */ }
           finish(Object.assign(new Error("任务已取消，远程命令已中断"), { name: "AbortError" }));
           c.close();
         };
@@ -330,12 +330,17 @@ export class SSH {
     local: string,
     remote: string,
     onProgress?: (transferred: number, total: number) => void,
+    signal?: AbortSignal,
   ) {
+    if (signal?.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
     const file = await stat(local);
     const total = file.size;
     onProgress?.(0, total);
     const c = await this.connect(vps);
+    const onAbort = () => c.close();
+    signal?.addEventListener("abort", onAbort, { once: true });
     try {
+      if (signal?.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
       await new Promise<void>((resolve, reject) =>
         c.client.sftp((e, s) => {
           if (e) {
@@ -363,6 +368,7 @@ export class SSH {
         }),
       );
     } finally {
+      signal?.removeEventListener("abort", onAbort);
       c.close();
     }
   }

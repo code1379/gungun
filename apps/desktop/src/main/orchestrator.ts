@@ -13,13 +13,13 @@ import {
   type VPS,
   type Website,
 } from "@gungun/domain";
-import { Cloudflare, compensate } from "./cloudflare";
+import { Cloudflare, withCloudflareMutation, compensate } from "./cloudflare";
 import { Certificates } from "./certificates";
 import type { Store } from "./store";
 import type { SSH } from "./ssh";
 import { StepFallbackError, type Step } from "./tasks";
 import { shellQuote } from "./ssh";
-const protocolDomainPrefix: Record<Service["protocol"], string> = {
+const _protocolDomainPrefix: Record<Service["protocol"], string> = {
   hysteria2: "hy2",
   tuic: "tuic",
   anytls: "anytls",
@@ -63,7 +63,7 @@ export function tunnelIngressSignature(
 }
 export class Orchestrator {
   readonly certificates: Certificates;
-  private cfLane: Promise<unknown> = Promise.resolve();
+
   constructor(
     private store: Store,
     private ssh: SSH,
@@ -136,10 +136,10 @@ export class Orchestrator {
           "set -eu",
           `tmp=${shellQuote(remote)}`,
           "trap 'rm -f \"$tmp\"' EXIT",
-          `curl --fail --location --silent --show-error --speed-limit ${speedLimit} --speed-time ${speedTime} ${shellQuote(url)} -o \"$tmp\"`,
-          `echo ${shellQuote(digest + "  ")}\"$tmp\" | sha256sum -c -`,
+          `curl --fail --location --silent --show-error --speed-limit ${speedLimit} --speed-time ${speedTime} ${shellQuote(url)} -o "$tmp"`,
+          `echo ${shellQuote(digest + "  ")}"$tmp" | sha256sum -c -`,
           "chmod 700 \"$tmp\"",
-          `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 \"$tmp\" ${shellQuote(staged)}`,
+          `${vps.username === "root" ? "" : "sudo -n "}install -m 0755 "$tmp" ${shellQuote(staged)}`,
           `${vps.username === "root" ? "" : "sudo -n "}mv -f ${shellQuote(staged)} /usr/local/bin/fq`,
           "rm -f \"$tmp\"",
           "trap - EXIT",
@@ -227,9 +227,7 @@ export class Orchestrator {
       if (!services?.length) throw new Error("请选择至少一个协议和接入方式");
       return this.deployServices(vps, services, step, signal);
     };
-    const run = this.cfLane.then(action, action);
-    this.cfLane = run.catch(() => {});
-    return run;
+    return withCloudflareMutation(action);
   }
 
   /**
@@ -241,7 +239,7 @@ export class Orchestrator {
     originalVps: VPS,
     input: Service[],
     step: Step,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ) {
     const services = input.map((service) => serviceSchema.parse(service));
     const selected = new Set<string>();
@@ -280,6 +278,7 @@ export class Orchestrator {
         zoneName: originalVps.zoneName,
       };
       // Only reconcile the Tunnel when this deployment actually changes its Argo ingress.
+      const previousTunnelHosts = tunnelIngress(state).flatMap((r) => r.hostname ? [r.hostname] : []);
       const previousTunnelSignature = tunnelIngressSignature(state);
 
       const backup = await step("备份远程配置", () =>
@@ -308,7 +307,7 @@ export class Orchestrator {
       if (needsZone && (!vps.zoneId || !vps.zoneName))
         throw new Error("所选服务需要 Cloudflare Zone，请先绑定域名区域");
 
-      const cf = new Cloudflare(this.store.settings());
+      const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
       const prefix: Record<Service["protocol"], string> = {
         hysteria2: "hy2",
         tuic: "tuic",
@@ -473,18 +472,18 @@ export class Orchestrator {
         state.tunnelToken = tunnel.token;
         state.disableTunnel = false;
         this.store.saveVps(vps);
-        undo.push(async () => this.store.saveVps(oldVps));
+        undo.push(async () => { this.store.saveVps(oldVps); });
 
         undo.push(
           await step("更新 Tunnel 多端口路由", () =>
-            cf.tunnelConfig(vps.accountId, tunnel.id, ingress),
+            cf.tunnelConfig(vps.accountId, tunnel.id, ingress, previousTunnelHosts),
           ),
         );
         await step("安装 / 更新 cloudflared", (_report, stepSignal) =>
           this.ssh.fq(vps, "core update cloudflared", undefined, 300000, stepSignal),
         );
       } else if (!hasArgo && tunnelChanged && vps.tunnelId) {
-        await this.updateTunnel(vps, state, step, undo);
+        await this.updateTunnel(vps, state, step, undo, previousTunnelHosts);
       }
 
       if (state.camouflage) {
@@ -578,6 +577,7 @@ export class Orchestrator {
     try {
       await this.ensureFqCurrent(vps, step);
       let state = await step("读取远程真实配置", () => this.ssh.state(vps));
+      const previousTunnelHosts = tunnelIngress(state).flatMap((r) => r.hostname ? [r.hostname] : []);
       state = {
         ...state,
         schemaVersion: 1,
@@ -629,7 +629,7 @@ export class Orchestrator {
           !(service.access === "cdn" && service.edgeScheme === "http")
         ) {
           const current = service;
-          const cf = new Cloudflare(this.store.settings());
+          const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
           service.domain = await step("检查 Cloudflare 边缘证书覆盖", () =>
             cf.edgeHostname(
               vps.zoneId,
@@ -643,7 +643,7 @@ export class Orchestrator {
       }
       if (website && website.access !== "direct") {
         const current = website;
-        const cf = new Cloudflare(this.store.settings());
+        const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
         await step("检查网站边缘证书覆盖", () =>
           cf.edgeHostname(vps.zoneId, current.domain),
         );
@@ -686,7 +686,7 @@ export class Orchestrator {
           const sharedPublic = state.services.find((item) => item.protocol === "vless-ws" && item.access !== "argo")?.publicPort;
           if (service.access === "argo") service.publicPort = 0;
           else service.publicPort = service.publicPort || sharedPublic || service.port;
-          for (const previous of state.services.filter((item) => item.protocol === "vless-ws" && item.access !== "argo" && service.access !== "argo")) {
+          for (const previous of state.services.filter((item) => item.protocol === "vless-ws" && item.access !== "argo" && service!.access !== "argo")) {
             if (previous.publicPort !== service.publicPort) throw new Error("VLESS + WS 的直连与 CDN 必须共用同一个公网映射端口");
           }
         } else {
@@ -732,7 +732,7 @@ export class Orchestrator {
           !item.domain.endsWith(`.${vps.zoneName}`)
         )
           throw new Error("域名不在所选 Zone 下");
-        const cf = new Cloudflare(this.store.settings());
+        const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
         if (item.access === "argo") {
           const tunnel = await step("准备此 VPS 的固定 Tunnel", () =>
             cf.tunnel(vps),
@@ -753,7 +753,7 @@ export class Orchestrator {
             throw new Error("Tunnel hostname 重复，请为每项服务选择不同域名");
           undo.push(
             await step("更新 Tunnel 多端口路由", () =>
-              cf.tunnelConfig(vps.accountId, tunnel.id, ingress),
+              cf.tunnelConfig(vps.accountId, tunnel.id, ingress, previousTunnelHosts),
             ),
           );
           const dns = await step("配置 Tunnel DNS", () =>
@@ -799,7 +799,7 @@ export class Orchestrator {
         }
       }
       if (item.access !== "argo" && vps.tunnelId) {
-        await this.updateTunnel(vps, state, step, undo);
+        await this.updateTunnel(vps, state, step, undo, previousTunnelHosts);
       }
       await step("预检查、应用、验证与失败回滚", () =>
         this.ssh.fq(vps, "apply", state),
@@ -820,10 +820,11 @@ export class Orchestrator {
         await this.ensureFqCurrent(vps, step);
       let state = await step("读取远程真实配置", () => this.ssh.state(vps));
         state = { ...state, schemaVersion: 1, hostId: vps.id, hostName: vps.name, kind: vps.kind, publicAddress: vps.publicAddress, namespace: vps.namespace, zoneName: vps.zoneName };
+        const previousTunnelHosts = tunnelIngress(state).flatMap((r) => r.hostname ? [r.hostname] : []);
         const previousSignature = tunnelIngressSignature(state);
         const backup = await step("备份远程配置", () => this.ssh.fq<{ backupId: string }>(vps, "backup"));
-        undo.push(async () => this.ssh.run(vps, `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq restore ${shellQuote(backup.backupId)} --json`));
-        const cf = new Cloudflare(this.store.settings());
+        undo.push(async () => { await this.ssh.run(vps, `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq restore ${shellQuote(backup.backupId)} --json`); });
+        const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
         const domain = await step("检查共享伪装站 Edge 证书覆盖", () => cf.edgeHostname(vps.zoneId, state.camouflage?.domain || `web-${vps.namespace}.${vps.zoneName}`));
         if (!state.camouflage) state.camouflage = { domain, port: await this.allocatePort(state, vps) };
         else state.camouflage.domain = domain;
@@ -838,8 +839,8 @@ export class Orchestrator {
           state.tunnelToken = tunnel.token;
           state.disableTunnel = false;
           this.store.saveVps(vps);
-          undo.push(async () => this.store.saveVps(oldVps));
-          undo.push(await step("更新 Tunnel 多端口路由", () => cf.tunnelConfig(vps.accountId, tunnel.id, ingress)));
+          undo.push(async () => { this.store.saveVps(oldVps); });
+          undo.push(await step("更新 Tunnel 多端口路由", () => cf.tunnelConfig(vps.accountId, tunnel.id, ingress, previousTunnelHosts)));
           await step("安装 / 更新 cloudflared", () => this.ssh.fq(vps, "core update cloudflared"));
         }
         if (!vps.tunnelId) throw new Error("Tunnel 尚未创建");
@@ -852,9 +853,7 @@ export class Orchestrator {
         return synchronized;
       } catch (error) { return compensate(undo, error); }
     };
-    const run = this.cfLane.then(action, action);
-    this.cfLane = run.catch(() => {});
-    return run;
+    return withCloudflareMutation(action);
   }
 
   private async updateTunnel(
@@ -862,12 +861,13 @@ export class Orchestrator {
     state: RemoteState,
     step: Step,
     undo: (() => Promise<void>)[],
+    previousTunnelHosts: string[],
   ) {
     const ingress = tunnelIngress(state);
-    const cf = new Cloudflare(this.store.settings());
+    const cf = new Cloudflare(this.store.settings(), undefined, (account, tunnel, hosts) => this.store.saveLocal(`tunnelRoutes:${account}:${tunnel}`, hosts));
     undo.push(
       await step("更新 Tunnel 路由", () =>
-        cf.tunnelConfig(vps.accountId, vps.tunnelId, ingress),
+        cf.tunnelConfig(vps.accountId, vps.tunnelId, ingress, previousTunnelHosts),
       ),
     );
     state.disableTunnel = ingress.length === 0;
@@ -876,6 +876,7 @@ export class Orchestrator {
     const action = async () => {
       await this.ensureFqCurrent(vps, step);
       const state = await step("读取真实配置", () => this.ssh.state(vps));
+      const previousTunnelHosts = tunnelIngress(state).flatMap((r) => r.hostname ? [r.hostname] : []);
       const previousTunnelSignature = tunnelIngressSignature(state);
       const backup = await step("备份配置", () =>
         this.ssh.fq<{ backupId: string }>(vps, "backup"),
@@ -896,7 +897,7 @@ export class Orchestrator {
           vps.tunnelId &&
           previousTunnelSignature !== tunnelIngressSignature(state)
         ) {
-          await this.updateTunnel(vps, state, step, undo);
+          await this.updateTunnel(vps, state, step, undo, previousTunnelHosts);
         }
         await step("应用、验证与失败回滚", () =>
           this.ssh.fq(vps, "apply", state),
@@ -906,9 +907,7 @@ export class Orchestrator {
         return compensate(undo, e);
       }
     };
-    const run = this.cfLane.then(action, action);
-    this.cfLane = run.catch(() => {});
-    return run;
+    return withCloudflareMutation(action);
   }
   private async allocatePort(state: RemoteState, vps: VPS) {
     const used = new Set(state.services.map((s) => s.port));

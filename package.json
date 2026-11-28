@@ -18,7 +18,12 @@
     "test:desktop": "node tests/desktop-smoke.mjs",
     "prepare:dev": "NODE_USE_ENV_PROXY=1 node scripts/prepare-dev.mjs",
     "electron:install": "node scripts/install-electron.mjs",
-    "setup:install": "node scripts/install-deps.mjs --frozen-lockfile"
+    "setup:install": "node scripts/install-deps.mjs --frozen-lockfile",
+    "test:local-runtime": "vitest run --config vitest.runtime.config.ts",
+    "test:macos-proxy": "node scripts/verify-macos-proxy.mjs",
+    "test:local-configs": "vitest run --config vitest.core.config.ts",
+    "test:macos-helper": "node scripts/check-macos-helper.mjs",
+    "package:mac:dir": "pnpm fq:build && pnpm --filter @gungun/desktop package:mac:dir"
   },
   "dependencies": {
     "yaml": "^2.8.1",

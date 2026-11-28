@@ -49,3 +49,23 @@ pnpm test:desktop
 
 Cloudflare、真实 VPS、NAT 映射、Apple 签名与公证等外部条件及验证状态见测试报告。无签名凭据时构建的是未签名应用。
 
+
+## 第一阶段：Cloudflare 与本机代理
+
+本轮以 `unified-singbox-ui` 的 `7ec4fe9` 为基线开发。新增功能已经接入桌面应用；**真实 Cloudflare、Apple Silicon 系统代理以及原生辅助程序编译/授权仍待验收，目前不标记为最终交付完成**。
+
+- 一级 Cloudflare 导航：账号 / Zone、DNS 查询与增删改、固定 Tunnel 与 VPS 映射和路由管理、Edge 证书查询 / 覆盖检查、Origin Rules 增删改、启停及排序。外部资源修改需要额外确认，陈旧快照拒绝覆盖；部署和资源页面共用规则与写入队列。
+- 底部本机代理栏：活动节点 / ID 引用链路、sing-box 状态、启动 / 停止 / 重启、实时脱敏日志、系统代理开关。默认 mixed inbound 为 `127.0.0.1:10808`，设置中可调整；点击节点行只选中，右键设置活动节点。
+- macOS 系统代理：SMAppService 特权辅助程序、受代码签名及代码哈希校验的 XPC、完整网络代理快照、写前恢复日志、心跳看护和外部修改冲突保护。开发模式可以运行本机核心；系统代理辅助程序需要位于已签名的 `.app` 中，并在 macOS 后台项目中获准运行。首次授权与后续无重复密码的行为尚未在真机验证。
+
+新增检查命令：
+
+```sh
+pnpm test                    # 无需核心二进制的逻辑 / 模拟进程回归
+pnpm cores:download
+pnpm test:local-configs      # 官方 sing-box check：六协议与四种链路配置
+pnpm test:local-runtime      # 真实进程和 HTTP/SOCKS，当前 Linux 容器受 netlink 限制
+pnpm test:macos-helper       # 必须在 Apple Silicon macOS 原生编译检查
+```
+
+仅在准备真机验收时，可用 `pnpm package:mac:dir` 生成本地 `.app` 目录；此命令不生成 DMG、不上传资产。本轮没有生成安装包，也没有启动 GitHub Actions。完整实测状态、真机步骤和已知限制见[测试报告](docs/测试报告.md)。

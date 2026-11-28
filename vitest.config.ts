@@ -8,6 +8,7 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: ["tests/**/*.real.test.ts", "tests/**/*.core.test.ts", "**/node_modules/**"],
     include: ["tests/**/*.test.ts", "scripts/**/*.test.ts"],
     testTimeout: 30000,
   },

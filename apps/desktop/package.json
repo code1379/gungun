@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && node ../../scripts/create-icon.mjs",
-    "package:mac": "electron-builder --mac --arm64 --publish never"
+    "package:mac": "electron-builder --mac --arm64 --publish never",
+    "package:mac:dir": "electron-builder --mac dir --arm64 --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
@@ -64,6 +65,10 @@
       {
         "from": "../../resources/THIRD_PARTY_NOTICES.md",
         "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../../resources/helpers",
+        "to": "helpers"
       }
     ],
     "mac": {
@@ -73,12 +78,17 @@
         "dmg"
       ],
       "artifactName": "Gungun-${version}-${arch}.${ext}",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "minimumSystemVersion": "13.0",
+      "binaries": [
+        "Contents/MacOS/gungun-proxy-helper"
+      ]
     },
     "dmg": {
       "title": "Gungun"
     },
     "afterSign": "../../scripts/notarize.cjs",
-    "npmRebuild": false
+    "npmRebuild": false,
+    "afterPack": "../../scripts/prepare-macos-helper.cjs"
   }
 }

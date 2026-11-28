@@ -9,7 +9,7 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
-    ignores: ["**/out/**", "**/dist/**", "**/node_modules/**", "resources/**"],
+    ignores: ["**/out/**", "**/dist/**", "**/node_modules/**", ".tools/**", "resources/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

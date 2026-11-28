@@ -53,6 +53,10 @@ func (m *Manager) CSR(domain string, extra []string) (M, error) {
 	names := []string{domain, "*." + domain}
 	seen := map[string]bool{domain: true, "*." + domain: true}
 	for _, name := range extra {
+		// The generated base and wildcard SANs may also occur in extra.
+		if seen[name] {
+			continue
+		}
 		if !validDomain.MatchString(name) {
 			return nil, errors.New("invalid additional domain")
 		}
@@ -60,7 +64,7 @@ func (m *Manager) CSR(domain string, extra []string) (M, error) {
 		suffix := "." + domain
 		label := strings.TrimSuffix(name, suffix)
 		coveredByWildcard := strings.HasSuffix(name, suffix) && label != "" && !strings.Contains(label, ".")
-		if seen[name] || coveredByWildcard {
+		if coveredByWildcard {
 			continue
 		}
 		seen[name] = true
