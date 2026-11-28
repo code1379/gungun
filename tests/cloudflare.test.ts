@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createServer,
   type IncomingMessage,
@@ -121,6 +121,43 @@ describe("Cloudflare API 与补偿", () => {
       expect(calls[2].body.rules).toHaveLength(2);
     } finally { await service.close(); }
   });
+  it("Cloudflare GET 网络瞬断会有限重试，成功后返回结果", async () => {
+    const service = await server((_req, _body, res) => reply(res, [{ status: "active", hosts: ["example.com"] }]));
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
+      attempts++;
+      if (attempts < 3) throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+      });
+      return originalFetch(...args);
+    });
+    try {
+      const cf = new Cloudflare({ cloudflareEmail: "x", cloudflareKey: "x" }, service.url);
+      const result = await cf.edgeHostname("z", "example.com");
+      expect(result).toBe("example.com");
+      expect(attempts).toBe(3);
+    } finally {
+      vi.unstubAllGlobals();
+      await service.close();
+    }
+  });
+
+  it("Cloudflare GET 网络错误会显示底层原因和请求路径", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+      });
+    });
+    try {
+      const cf = new Cloudflare({ cloudflareEmail: "x", cloudflareKey: "x" });
+      await expect(cf.zones()).rejects.toThrow(/GET \/zones\?per_page=50&page=1.*ECONNRESET/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("API 错误不假装成功", async () => {
     const service = await server((_req, _body, res) => reply(res, null, 403));
     try {
