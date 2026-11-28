@@ -21,6 +21,7 @@ interface Props {
   name?: string;
   disabled?: boolean;
   required?: boolean;
+  placeholder?: string;
   className?: string;
   title?: string;
   "aria-label"?: string;
@@ -57,18 +58,23 @@ export function SelectField({
   required,
   className,
   title,
+  placeholder = "请选择",
   ...accessibility
 }: Props) {
   const items = options(children);
+  const selected = String(value ?? "") || empty;
+  const selection = items.some((item) => item.value === selected)
+    ? selected
+    : null;
   return (
     <Root
       items={items}
-      value={String(value ?? "") || empty}
+      value={selection}
       onValueChange={(next) =>
         onValueChange?.(next === empty || next === null ? "" : String(next))
       }
       name={name}
-      disabled={disabled}
+      disabled={disabled || items.length === 0}
       required={required}
     >
       <SelectTrigger
@@ -77,7 +83,7 @@ export function SelectField({
         title={title}
         {...accessibility}
       >
-        <SelectValue placeholder="请选择" className="min-w-0 truncate" />
+        <SelectValue placeholder={placeholder} className="min-w-0 truncate" />
       </SelectTrigger>
       <SelectContent align="start" alignItemWithTrigger={false}>
         {items.map((item) => (

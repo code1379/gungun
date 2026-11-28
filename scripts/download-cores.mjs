@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { downloadBuffer, fetchJson } from "./download-utils.mjs";
+const releaseInfo = JSON.parse(await readFile(new URL("../resources/core-release.json", import.meta.url), "utf8"));
 const platform = process.env.CORE_PLATFORM || process.platform;
 const arch =
   (process.env.BUILD_ARCH || process.arch) === "x64"
@@ -11,11 +12,11 @@ const arch =
     : process.env.BUILD_ARCH || process.arch;
 const assets = [
   {
-    repo: "SagerNet/sing-box",
-    version: "v1.14.4",
-    name: `sing-box-1.14.4-${platform}-${arch}.tar.gz`,
+    repo: releaseInfo.repo,
+    version: `v${releaseInfo.version}`,
+    name: `sing-box-${releaseInfo.version}-${platform}-${arch}.tar.gz`,
     output: `sing-box-${platform}-${arch}`,
-    executable: `sing-box-1.14.4-${platform}-${arch}/sing-box`,
+    executable: `sing-box-${releaseInfo.version}-${platform}-${arch}/sing-box`,
   },
 ];
 if (process.env.WITH_CADDY === "1") {

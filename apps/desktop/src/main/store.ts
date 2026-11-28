@@ -36,6 +36,8 @@ export class Store {
  CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL CHECK(json_valid(data)));
  CREATE TABLE IF NOT EXISTS results(kind TEXT NOT NULL,subject_id TEXT NOT NULL,source_id TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)),PRIMARY KEY(kind,subject_id,source_id));
  CREATE TABLE IF NOT EXISTS host_keys(address TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS local_state(key TEXT PRIMARY KEY,data TEXT NOT NULL CHECK(json_valid(data)));
+ CREATE TABLE IF NOT EXISTS resource_audit(id INTEGER PRIMARY KEY,at TEXT NOT NULL,operation TEXT NOT NULL,resource TEXT NOT NULL,ok INTEGER NOT NULL,error TEXT);
  `);
     for (const t of this.all<Task>("tasks"))
       if (t.state === "running" || t.state === "queued" || t.state === "cancelling")
@@ -52,6 +54,17 @@ export class Store {
       .all(kind)
       .map((r) => JSON.parse(r.data as string) as T);
   }
+  local<T>(key: string): T | undefined {
+    const row = this.db.prepare("SELECT data FROM local_state WHERE key=?").get(key);
+    return row ? JSON.parse(row.data as string) as T : undefined;
+  }
+  saveLocal(key: string, value: unknown) {
+    this.db.prepare("INSERT INTO local_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data").run(key, JSON.stringify(value));
+  }
+  audit(operation: string, resource: string, ok: boolean, error?: string) {
+    this.db.prepare("INSERT INTO resource_audit(at,operation,resource,ok,error) VALUES(?,?,?,?,?)").run(new Date().toISOString(), operation, resource, Number(ok), error || null);
+  }
+  audits() { return this.db.prepare("SELECT * FROM resource_audit ORDER BY id DESC LIMIT 100").all(); }
   get<T>(kind: Kind, id: string): T {
     const row = this.db
       .prepare("SELECT data FROM objects WHERE kind=? AND id=?")
@@ -263,6 +276,7 @@ export class Store {
   }
   snapshot(): Snapshot {
     return {
+      activeProxy: this.local<{ kind: "node" | "chain"; id: string }>("activeProxy") || null,
       vps: this.all("vps"),
       nodes: this.all("nodes"),
       chains: this.all("chains"),

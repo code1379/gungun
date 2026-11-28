@@ -123,6 +123,8 @@ export default function Dashboard({
                         failed: "失败",
                         running: "执行中",
                         queued: "排队中",
+                        cancelled: "已取消",
+                        cancelling: "取消中",
                         interrupted: "已中断",
                       }[t.state]
                     }

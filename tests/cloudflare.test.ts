@@ -37,11 +37,13 @@ const reply = (res: ServerResponse, result: unknown, status = 200) => {
 describe("Cloudflare API 与补偿", () => {
   it("Global Key 仅作为本机 API header，DNS 更新可恢复原值", async () => {
     const calls: { method: string; body: Record<string, unknown> }[] = [];
+    let current: Record<string, unknown> | undefined;
     const service = await server((req, body, res) => {
       expect(req.headers["x-auth-email"]).toBe("user@example.com");
       expect(req.headers["x-auth-key"]).toBe("test-global-key");
       calls.push({ method: req.method!, body });
-      if (req.method === "GET")
+      if (req.method === "GET" && req.url?.endsWith("/record-id")) reply(res, current);
+      else if (req.method === "GET")
         reply(res, [
           {
             id: "record-id",
@@ -50,9 +52,10 @@ describe("Cloudflare API 与补偿", () => {
             content: "203.0.113.1",
             proxied: false,
             ttl: 120,
+            comment: "Gungun managed",
           },
         ]);
-      else reply(res, { id: "record-id", ...body });
+      else { current = { id: "record-id", ...body }; reply(res, current); }
     });
     try {
       const cf = new Cloudflare(
@@ -70,8 +73,8 @@ describe("Cloudflare API 与补偿", () => {
         true,
       );
       await operation.undo();
-      expect(calls.map((c) => c.method)).toEqual(["GET", "PUT", "PUT"]);
-      expect(calls[2].body.content).toBe("203.0.113.1");
+      expect(calls.map((c) => c.method)).toEqual(["GET", "PUT", "GET", "PUT"]);
+      expect(calls[3].body.content).toBe("203.0.113.1");
       expect(JSON.stringify(calls.map((c) => c.body))).not.toContain(
         "test-global-key",
       );
@@ -105,20 +108,22 @@ describe("Cloudflare API 与补偿", () => {
       await service.close();
     }
   });
-  it("相同 Edge 与公网端口时可清理旧的 Gungun Origin Rule", async () => {
+  it("相同 Edge 与公网端口时仅删除指定 Gungun Origin Rule，并可恢复", async () => {
     const calls: { method: string; url: string; body: Record<string, unknown> }[] = [];
-    const oldRule = { ref: "gungun_cdn_example_com", expression: '(http.host eq "cdn.example.com")', action: "route" };
+    const oldRule = { id: "own", ref: "gungun_cdn_example_com", description: "Gungun cdn.example.com", expression: '(http.host eq "cdn.example.com")', action: "route" };
+    let rules = [oldRule, { id: "external", ref: "other", action: "route", description: "Other", expression: "true" }];
     const service = await server((req, body, res) => {
       calls.push({ method: req.method!, url: req.url || "", body });
-      if (req.method === "GET") reply(res, { id: "ruleset", rules: [oldRule, { ref: "other", action: "route" }] });
-      else reply(res, { id: "ruleset" });
+      if (req.method === "DELETE") rules = rules.filter((r) => r.id !== "own");
+      if (req.method === "POST") rules.push({ ...body, id: "restored" } as typeof oldRule);
+      reply(res, { id: "ruleset", rules });
     });
     try {
       const cf = new Cloudflare({ cloudflareEmail: "x", cloudflareKey: "x" }, service.url);
       const undo = await cf.removeOriginRule("zone", "cdn.example.com");
-      expect(calls[1].body.rules).toEqual([{ ref: "other", action: "route" }]);
-      await undo();
-      expect(calls[2].body.rules).toHaveLength(2);
+      expect(calls[1].method).toBe("DELETE"); expect(calls[1].url.endsWith("/rules/own")).toBe(true);
+      expect(rules).toHaveLength(1); expect(rules[0].ref).toBe("other");
+      await undo(); expect(rules).toHaveLength(2);
     } finally { await service.close(); }
   });
   it("Cloudflare GET 网络瞬断会有限重试，成功后返回结果", async () => {
@@ -144,7 +149,6 @@ describe("Cloudflare API 与补偿", () => {
   });
 
   it("Cloudflare GET 网络错误会显示底层原因和请求路径", async () => {
-    const originalFetch = globalThis.fetch;
     vi.stubGlobal("fetch", async () => {
       throw new TypeError("fetch failed", {
         cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),

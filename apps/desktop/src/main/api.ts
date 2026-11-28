@@ -26,10 +26,14 @@ import {
 } from "@gungun/domain";
 import type { Store } from "./store";
 import { resolveSSHKeyPath, SSH } from "./ssh";
-import { TaskCenter, pooled, ConcurrencyGate } from "./tasks";
+import { TaskCenter, pooled, ConcurrencyGate, type Step } from "./tasks";
 import { Cloudflare } from "./cloudflare";
 import { Orchestrator } from "./orchestrator";
 import { Benchmark } from "./benchmark";
+import { CloudflareResources } from "./cloudflare-resources";
+import { LocalRuntime, type ActiveProxy } from "./local-runtime";
+import { ProxyController, MacProxyAdapter } from "./system-proxy";
+import { ensureLocalCore } from "./core-download";
 const id = z.string().min(1).max(200);
 const DEFAULT_SSH_KEY_PATH = "~/.ssh/id_ed25519_gungun";
 const NAMESPACE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -42,18 +46,29 @@ function createNamespace(existing: Set<string>) {
   throw new Error("无法生成唯一域名空间标识，请重试");
 }
 export class API {
+  private proxyLane: Promise<unknown> = Promise.resolve();
   private testGate: ConcurrencyGate;
   readonly ssh: SSH;
   readonly tasks: TaskCenter;
   readonly orchestrator: Orchestrator;
   readonly benchmark: Benchmark;
+  readonly cloudflare: CloudflareResources;
+  readonly proxy: ProxyController;
+  private localCore: () => Promise<string>;
   constructor(
     readonly store: Store,
     private notify: () => void,
     resources: string,
     dataDir: string,
     private openWindow: (type: string, id: string) => void,
+    helperBinary?: string,
   ) {
+    this.cloudflare = new CloudflareResources(store);
+    this.localCore = () => ensureLocalCore(resources, dataDir, true);
+    this.proxy = new ProxyController(new LocalRuntime(
+      () => ensureLocalCore(resources, dataDir), join(dataDir, "local-runtime"), notify,
+      join(dirname(resources), "helpers", "core-supervisor.cjs"), () => store.settings().latencyUrl,
+    ), new MacProxyAdapter(helperBinary), notify);
     this.testGate = new ConcurrencyGate(() => store.settings().concurrency);
     this.ssh = new SSH(store);
     this.tasks = new TaskCenter(store, notify);
@@ -72,10 +87,41 @@ export class API {
       this.ssh,
     );
   }
-  async invoke(operation: string, input: unknown): Promise<unknown> {
+  invoke(operation: string, input: unknown): Promise<unknown> {
+    if (["activateProxy", "localProxyAction", "saveSettings", "importData", "remove"].includes(operation)) {
+      const job = this.proxyLane.then(() => this.execute(operation, input));
+      this.proxyLane = job.catch(() => {});
+      return job;
+    }
+    return this.execute(operation, input);
+  }
+  private async execute(operation: string, input: unknown): Promise<unknown> {
     const s = this.store;
     let value: unknown;
     switch (operation) {
+      case "cloudflare": return this.cloudflare.invoke(input);
+      case "proxyStatus": return { runtime: this.proxy.runtime.snapshot(), system: this.proxy.snapshot() };
+      case "networkServices": return this.proxy.services();
+      case "authorizeProxy": return this.proxy.authorize();
+      case "downloadLocalCore": await this.localCore(); return this.proxy.runtime.check();
+      case "acknowledgeProxyConflict": await this.proxy.acknowledge(z.literal(true).parse(input)); return true;
+      case "activateProxy": {
+        const active = z.object({ kind: z.enum(["node", "chain"]), id }).parse(input);
+        const target = this.proxyTarget(active);
+        await this.proxy.switch(active, target.nodes, target.chain, s.settings().localProxyPort);
+        s.saveLocal("activeProxy", active); this.notify(); return true;
+      }
+      case "localProxyAction": {
+        const q = z.object({ action: z.enum(["start", "stop", "restart", "enableSystem", "disableSystem"]), serviceId: z.string().optional() }).parse(input);
+        if (q.action === "stop") { await this.proxy.stop(); return true; }
+        if (q.action === "disableSystem") { await this.proxy.disable(); return true; }
+        const active = s.local<ActiveProxy>("activeProxy");
+        if (!active) throw new Error("请先在节点或链路右键菜单中设为活动节点");
+        const target = this.proxyTarget(active);
+        if (q.action === "enableSystem") await this.proxy.enable(active, target.nodes, target.chain, s.settings().localProxyPort, q.serviceId || s.settings().networkServiceId);
+        else await this.proxy.start(active, target.nodes, target.chain, s.settings().localProxyPort);
+        return true;
+      }
       case "snapshot": {
         const snapshot = s.snapshot();
         return {
@@ -160,6 +206,11 @@ export class API {
             confirmAffected: z.boolean().default(false),
           })
           .parse(input);
+        if (this.proxy.runtime.snapshot().state === "running") {
+          const active = s.local<ActiveProxy>("activeProxy");
+          const target = active ? this.proxyTarget(active) : null;
+          if ((active?.id === q.id) || target?.nodes.some((n) => n.id === q.id || (q.kind === "tags" && n.tagId === q.id) || (q.kind === "vps" && n.vpsId === q.id))) throw new Error("该资源正被本机代理使用，请先停止本机核心再删除");
+        }
         value = s.remove(q.kind, q.id, q.confirmAffected);
         break;
       }
@@ -170,6 +221,7 @@ export class API {
         if (!q.sshKeyPath) q.sshKeyPath = DEFAULT_SSH_KEY_PATH;
         if (q.cloudflareKey === "********")
           q.cloudflareKey = s.settings().cloudflareKey;
+        if (q.localProxyPort !== s.settings().localProxyPort && this.proxy.runtime.snapshot().state === "running") throw new Error("请先停止本机核心，再修改监听端口");
         value = s.saveSettings(q);
         value = { ...q, cloudflareKey: q.cloudflareKey ? "********" : "" };
         break;
@@ -713,6 +765,7 @@ export class API {
         return result.filePath;
       }
       case "importData": {
+        if (this.proxy.runtime.snapshot().state === "running") throw new Error("导入备份前请先停止本机代理，避免覆盖正在使用的节点和端口设置");
         const result = await dialog.showOpenDialog({
           properties: ["openFile"],
           filters: [{ name: "Gungun backup", extensions: ["json"] }],
@@ -745,6 +798,12 @@ export class API {
     }
     this.notify();
     return value;
+  }
+  private proxyTarget(active: ActiveProxy) {
+    const all = this.store.all<ProxyNode>("nodes");
+    const chain = active.kind === "chain" ? this.store.get<Chain>("chains", active.id) : undefined;
+    const nodes = chain ? all : [this.store.get<ProxyNode>("nodes", active.id)];
+    return { nodes, chain };
   }
   async renewDue() {
     for (const v of this.store.all<VPS>("vps"))

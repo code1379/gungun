@@ -348,9 +348,8 @@ export default function Nodes() {
                 <TableHead className="w-10 text-center">
                   <Checkbox
                     aria-label={isChain ? "全选当前链路" : "全选当前分组节点"}
-                    checked={
-                      allSelected ? true : partialSelection ? "indeterminate" : false
-                    }
+                    checked={allSelected}
+                    indeterminate={partialSelection}
                     onCheckedChange={(checked) =>
                       setSelectedIds(checked ? subjects.map((subject) => subject.id) : [])
                     }
@@ -404,6 +403,7 @@ export default function Nodes() {
                     </TableCell>
                     <TableCell>
                       <strong>{n.name}</strong>
+                      {data.activeProxy?.id === n.id && data.activeProxy.kind === (isChain ? "chain" : "node") && <Badge tone="good">活动</Badge>}
                       {"nodeIds" in n ? (
                         <Badge tone="blue">{n.nodeIds.length} 跳</Badge>
                       ) : (
@@ -490,6 +490,10 @@ export default function Nodes() {
           role="menu"
           style={{ left: menu.x, top: menu.y }}
         >
+            <button onClick={() => {
+              void run(() => call("activateProxy", { kind: isChain ? "chain" : "node", id: menu.id }), "活动节点已更新");
+              setMenu(null);
+            }}>设为活动{isChain ? "链路" : "节点"}</button>
             <button
               onClick={() => {
                 setDetails(menu.id);

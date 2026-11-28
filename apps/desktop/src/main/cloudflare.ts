@@ -11,14 +11,33 @@ interface CFResponse<T> {
   errors: { code: number; message: string }[];
   result_info?: { total_pages: number };
 }
-interface DNSRecord {
+export interface DNSRecord {
   id: string;
   type: string;
   name: string;
   content: string;
   proxied: boolean;
   ttl: number;
+  comment?: string;
+  proxiable?: boolean;
 }
+export interface OriginRule {
+  id?: string;
+  ref?: string;
+  description?: string;
+  expression: string;
+  action: string;
+  action_parameters?: { origin?: { port?: number }; [key: string]: unknown };
+  enabled?: boolean;
+  version?: string;
+}
+export interface TunnelIngress {
+  hostname?: string;
+  service: string;
+  [key: string]: unknown;
+}
+export const originRef = (hostname: string) => `gungun_${hostname.replaceAll(".", "_")}`;
+export const managedRule = (rule: OriginRule) => rule.ref?.startsWith("gungun_") === true && rule.description?.startsWith("Gungun ") === true;
 
 function describeFetchError(error: unknown) {
   const details: string[] = [];
@@ -68,11 +87,58 @@ function isRetryableFetchError(error: unknown) {
   }
   return false;
 }
+let mutationLane: Promise<unknown> = Promise.resolve();
+export function withCloudflareMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const task = mutationLane.then(operation);
+  mutationLane = task.catch(() => {});
+  return task;
+}
 export class Cloudflare {
   constructor(
     private settings: Pick<Settings, "cloudflareEmail" | "cloudflareKey">,
     private base = "https://api.cloudflare.com/client/v4",
+    private recordTunnel?: (account: string, tunnel: string, hosts: string[]) => void,
   ) {}
+  async pages<T>(path: string) {
+    const result: T[] = [];
+    for (let page = 1; page <= 1000; page++) {
+      const rows = await this.request<T[]>(`${path}${path.includes("?") ? "&" : "?"}per_page=50&page=${page}`);
+      result.push(...rows);
+      if (rows.length < 50) return result;
+    }
+    throw new Error("Cloudflare 资源分页超过限制，结果未完整读取");
+  }
+  dnsRecords(zone: string) { return this.pages<DNSRecord>(`/zones/${zone}/dns_records`); }
+  async originRules(zone: string): Promise<{ id: string; rules: OriginRule[] }> {
+    try { return await this.request(`/zones/${zone}/rulesets/phases/http_request_origin/entrypoint`); }
+    catch (error) { if (String(error).includes("Cloudflare 404:")) return { id: "", rules: [] }; throw error; }
+  }
+  async saveOrigin(zone: string, rule: OriginRule, ruleset: string, before?: OriginRule, position?: number) {
+    const { ref, description, expression, action, action_parameters, enabled } = rule;
+    const body = { ref, description, expression, action, action_parameters, enabled };
+    const data = { ...body, ...(position ? { position: { index: position } } : {}) };
+    if (!ruleset) {
+      const created = await this.request<{ id: string; rules: OriginRule[] }>(`/zones/${zone}/rulesets`, "POST", {
+        name: "Gungun origin ports", kind: "zone", phase: "http_request_origin", rules: [body],
+      });
+      return { ruleset: created.id, rule: created.rules[0] };
+    }
+    const saved = await this.request<{ id: string; rules: OriginRule[] }>(`/zones/${zone}/rulesets/${ruleset}/rules${before?.id ? `/${before.id}` : ""}`, before ? "PATCH" : "POST", data);
+    const savedRule = saved.rules.find((r) => before?.id ? r.id === before.id : r.ref === rule.ref);
+    if (!savedRule) throw new Error("Origin Rule API 未返回写入后的规则，请刷新核验");
+    return { ruleset, rule: savedRule };
+  }
+  async edgeCertificates(zone: string) {
+    const results = await Promise.allSettled([
+      this.request<{ enabled: boolean }>(`/zones/${zone}/ssl/universal/settings`),
+      this.pages<{ id: string; status: string; type: string; hosts: string[]; certificates?: { expires_on?: string; issued_on?: string; hosts?: string[]; status?: string }[] }>(`/zones/${zone}/ssl/certificate_packs`),
+    ]);
+    return {
+      universal: results[0].status === "fulfilled" ? results[0].value : null,
+      packs: results[1].status === "fulfilled" ? results[1].value : null,
+      errors: results.flatMap((r) => r.status === "rejected" ? [String(r.reason)] : []),
+    };
+  }
   async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
     const requestMethod = method.toUpperCase();
     const attempts = requestMethod === "GET" ? 3 : 1;
@@ -139,7 +205,9 @@ export class Cloudflare {
       throw new Error(
         `${name} 已存在不同类型 DNS 记录，请在 Cloudflare 核验后处理`,
       );
-    const data = { type, name, content, proxied, ttl: 1 };
+    if (old[0] && old[0].comment !== "Gungun managed")
+      throw new Error(`${name} 是外部 DNS 记录，请先在 Cloudflare 管理中心确认接管后再部署`);
+    const data = { type, name, content, proxied, ttl: 1, comment: "Gungun managed" };
     if (old.length > 1) throw new Error("同名 DNS 存在多个记录，请先清理");
     const before = old[0];
     const record = await this.request<DNSRecord>(
@@ -150,14 +218,17 @@ export class Cloudflare {
     return {
       record,
       undo: async () => {
+        const current = await this.request<DNSRecord>(`${path}/${record.id}`);
+        const fields = ["type", "name", "content", "proxied", "ttl", "comment"] as const;
+        if (fields.some((key) => current[key] !== record[key])) throw new Error("DNS 已被外部修改，停止回滚");
         if (before) {
-          const { type, name, content, proxied, ttl } = before;
+          const { type, name, content, proxied, ttl, comment } = before;
           await this.request(`${path}/${before.id}`, "PUT", {
             type,
             name,
             content,
             proxied,
-            ttl,
+            ttl, comment,
           });
         } else await this.request(`${path}/${record.id}`, "DELETE");
       },
@@ -195,92 +266,69 @@ export class Cloudflare {
       ),
     };
   }
-  async tunnelConfig(
-    account: string,
-    id: string,
-    ingress: {
-      hostname?: string;
-      service: string;
-      originRequest?: { originServerName?: string; noTLSVerify?: boolean };
-    }[],
-  ) {
+  async tunnelConfig(account: string, id: string, ingress: TunnelIngress[], managedHosts: string[] = []) {
     const path = `/accounts/${account}/cfd_tunnel/${id}/configurations`;
-    let before: { config?: unknown } = {};
-    try {
-      before = await this.request(path);
-    } catch (e) {
-      if (!String(e).includes("404")) throw e;
+    let before: { config?: { ingress?: TunnelIngress[]; [key: string]: unknown } } = {};
+    try { before = await this.request(path); }
+    catch (error) { if (!String(error).includes("Cloudflare 404:")) throw error; }
+    const old = before.config?.ingress || [];
+    const names = new Set(ingress.map((r) => r.hostname));
+    if (names.size !== ingress.length) throw new Error("Tunnel 路由域名重复");
+    const seen = new Set<string>();
+    const merged: TunnelIngress[] = [];
+    for (const previous of old) {
+      if (!previous.hostname && !previous.path) continue;
+      const desired = ingress.find((r) => r.hostname === previous.hostname);
+      if (previous.path) {
+        if (desired) throw new Error(`Tunnel ${previous.hostname} 存在外部按路径路由，请先核验`);
+        merged.push(previous); continue;
+      }
+      if (desired) {
+        if (!managedHosts.includes(previous.hostname!) && JSON.stringify(desired) !== JSON.stringify(previous)) throw new Error(`Tunnel 路由 ${previous.hostname} 无可信归属，停止覆盖`);
+        if (seen.has(previous.hostname!)) throw new Error("Tunnel 存在重复域名路由，停止覆盖");
+        seen.add(previous.hostname!);
+        merged.push({ ...previous, ...desired });
+      } else if (!managedHosts.includes(previous.hostname!)) merged.push(previous);
     }
-    await this.request(path, "PUT", {
-      config: { ingress: [...ingress, { service: "http_status:404" }] },
-    });
+    const catchAll = old.find((r) => !r.hostname && !r.path) || { service: "http_status:404" };
+    const config = { ...before.config, ingress: [...merged, ...ingress.filter((r) => !seen.has(r.hostname!)), catchAll] };
+    await this.request(path, "PUT", { config });
+    this.recordTunnel?.(account, id, ingress.flatMap((r) => r.hostname ? [r.hostname] : []));
     return async () => {
-      await this.request(path, "PUT", {
-        config: before.config || { ingress: [{ service: "http_status:404" }] },
-      });
+      const current = await this.request<{ config: unknown }>(path);
+      if (JSON.stringify(current.config) !== JSON.stringify(config)) throw new Error("Tunnel 配置已被修改，停止回滚");
+      await this.request(path, "PUT", { config: before.config || { ingress: [{ service: "http_status:404" }] } });
+      this.recordTunnel?.(account, id, managedHosts);
     };
   }
   async originRule(zone: string, hostname: string, port: number) {
-    const phase = `/zones/${zone}/rulesets/phases/http_request_origin/entrypoint`;
-    let existing: { id: string; rules: Record<string, unknown>[] } | undefined;
-    try {
-      existing = await this.request(phase);
-    } catch (e) {
-      if (!String(e).includes("404")) throw e;
-    }
-    const ref = `gungun_${hostname.replaceAll(".", "_")}`;
-    const rule = {
-      ref,
-      description: `Gungun ${hostname}`,
-      expression: `(http.host eq "${hostname}")`,
-      action: "route",
-      action_parameters: { origin: { port } },
-      enabled: true,
-    };
-    const clean = (rs: Record<string, unknown>[]) =>
-      rs.map(({ id: _id, version: _v, last_updated: _l, ...r }) => r);
-    const old = existing?.rules || [];
-    if (existing) {
-      const next = clean(old).filter((r) => r.ref !== ref);
-      next.push(rule);
-      await this.request(`/zones/${zone}/rulesets/${existing.id}`, "PUT", {
-        rules: next,
-      });
-      return async () => {
-        await this.request(`/zones/${zone}/rulesets/${existing!.id}`, "PUT", {
-          rules: clean(old),
-        });
-      };
-    }
-    const created = await this.request<{ id: string }>(
-      `/zones/${zone}/rulesets`,
-      "POST",
-      {
-        name: "Gungun origin ports",
-        kind: "zone",
-        phase: "http_request_origin",
-        rules: [rule],
-      },
-    );
+    const existing = await this.originRules(zone);
+    const ref = originRef(hostname);
+    const before = existing.rules.find((rule) => rule.ref === ref);
+    if (before && !managedRule(before)) throw new Error("同名 Origin Rule 属于外部资源，请在管理中心核验并调整，部署不会自动覆盖");
+    const saved = await this.saveOrigin(zone, {
+      ref, description: `Gungun ${hostname}`, expression: `(http.host eq "${hostname}")`,
+      action: "route", action_parameters: { origin: { port } }, enabled: true,
+    }, existing.id, before);
     return async () => {
-      await this.request(`/zones/${zone}/rulesets/${created.id}`, "DELETE");
+      const current = await this.originRules(zone);
+      const rule = current.rules.find((rule) => rule.id === saved.rule.id);
+      if (JSON.stringify(rule) !== JSON.stringify(saved.rule)) throw new Error("Origin Rule 已被修改，停止回滚");
+      if (before) await this.saveOrigin(zone, before, saved.ruleset, saved.rule);
+      else await this.request(`/zones/${zone}/rulesets/${saved.ruleset}/rules/${saved.rule.id}`, "DELETE");
     };
   }
   async removeOriginRule(zone: string, hostname: string) {
-    const phase = `/zones/${zone}/rulesets/phases/http_request_origin/entrypoint`;
-    let existing: { id: string; rules: Record<string, unknown>[] } | undefined;
-    try { existing = await this.request(phase); }
-    catch (error) { if (String(error).includes("404")) return async () => {}; throw error; }
-    if (!existing) return async () => {};
-    const ref = `gungun_${hostname.replaceAll(".", "_")}`;
-    const clean = (rules: Record<string, unknown>[]) =>
-      rules.map(({ id: _id, version: _version, last_updated: _updated, ...rule }) => rule);
-    const old = existing.rules || [];
-    const next = clean(old).filter((rule) => rule.ref !== ref);
-    if (next.length === old.length) return async () => {};
-    await this.request(`/zones/${zone}/rulesets/${existing.id}`, "PUT", { rules: next });
+    const existing = await this.originRules(zone);
+    const before = existing.rules.find((rule) => rule.ref === originRef(hostname));
+    if (!before) return async () => {};
+    if (!managedRule(before)) throw new Error("不能删除外部 Origin Rule");
+    const position = existing.rules.indexOf(before) + 1;
+    await this.request(`/zones/${zone}/rulesets/${existing.id}/rules/${before.id}`, "DELETE");
     return async () => {
-      await this.request(`/zones/${zone}/rulesets/${existing!.id}`, "PUT", { rules: clean(old) });
+      const current = await this.originRules(zone);
+      if (current.rules.some((rule) => rule.ref === before.ref)) throw new Error("同名 Origin Rule 已存在，停止回滚");
+      await this.saveOrigin(zone, before, existing.id, undefined, position);
     };
   }
   async edgeHostname(zone: string, desired: string, fallback?: string) {

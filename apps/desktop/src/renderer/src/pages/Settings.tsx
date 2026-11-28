@@ -10,6 +10,7 @@ import {
   Select,
   Input,
 } from "../components/ui";
+import ProxySettings from "../components/ProxySettings";
 interface SSHKeyStatus {
   path: string;
   privateExists: boolean;
@@ -96,6 +97,7 @@ export default function Settings() {
           }, "设置已保存");
         }}
       >
+        <ProxySettings values={values} update={update} />
         <section className="section settings-section">
           <h2>外观</h2>
           <div className="form-grid">

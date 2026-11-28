@@ -27,6 +27,9 @@ importers:
       eslint:
         specifier: ^9.39.1
         version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
+      node-api-headers:
+        specifier: 1.9.0
+        version: 1.9.0
       prettier:
         specifier: ^3.10.1
         version: 3.10.1
@@ -2141,6 +2144,9 @@ packages:
   node-abi@4.43.0:
     resolution: {integrity: sha512-sey5XPoGJ2VBCcwtHhvwSbMMkYvXyvZkn+FjHsoFij3bcWjJRN4+3Zt7GsZOkgZ8J0maJFCWsYtralZDJVQncg==}
     engines: {node: '>=22.12.0'}
+
+  node-api-headers@1.9.0:
+    resolution: {integrity: sha512-2oNILP4jXwRB4ywnYKjVk1YyJ96n2D4EOVJO6S3oYZ5PtbJrw3Yt9TpAuX3nBLMuzn74rnfGQrv13pS9vC+YiA==}
 
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
@@ -4868,6 +4874,8 @@ snapshots:
   node-abi@4.43.0:
     dependencies:
       semver: 7.8.6
+
+  node-api-headers@1.9.0: {}
 
   node-api-version@0.2.1:
     dependencies:

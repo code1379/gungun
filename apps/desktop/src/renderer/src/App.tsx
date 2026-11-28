@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Cloud,
   LayoutDashboard,
   Server,
   Rocket,
@@ -22,10 +23,13 @@ import Tasks from "./pages/Tasks";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
 import WorkWindow from "./pages/WorkWindow";
+import Cloudflare from "./pages/Cloudflare";
+import ProxyBar from "./components/ProxyBar";
 const navigation = [
   { id: "dashboard", label: "主控制台", icon: LayoutDashboard },
   { id: "vps", label: "VPS 管理", icon: Server },
   { id: "deploy", label: "部署中心", icon: Rocket },
+  { id: "cloudflare", label: "Cloudflare", icon: Cloud },
   { id: "network", label: "网络服务", icon: NetworkIcon },
   { id: "nodes", label: "节点与订阅", icon: Layers },
   { id: "tasks", label: "任务中心", icon: ListTodo },
@@ -113,12 +117,14 @@ export default function App() {
           {page === "dashboard" && <Dashboard navigate={setPage} />}
           {page === "vps" && <Vps />}
           <div hidden={page !== "deploy"}><Deploy /></div>
+          {page === "cloudflare" && <Cloudflare />}
           {page === "network" && <Network />}
           {page === "nodes" && <Nodes />}
           {page === "tasks" && <Tasks />}
           {page === "settings" && <Settings />}
           {page === "help" && <Help />}
         </div>
+        <ProxyBar openSettings={() => setPage("settings")} />
       </main>
       <Feedback />
     </div>

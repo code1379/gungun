@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, ChevronLeft, Terminal, ScrollText, RefreshCw, Pencil, Server, CheckCircle2, AlertCircle } from "lucide-react";
 import { VPS } from "@gungun/domain";
 import { errorText, useApp } from "../api";
 import { Badge, Button, Confirm, Empty, Field, HelpTip, Modal, PageHeader, pretty, Input, Select, Checkbox } from "../components/ui";
