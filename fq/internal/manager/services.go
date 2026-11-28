@@ -128,6 +128,37 @@ func (m *Manager) ServiceAction(name, action string) ([]byte, error) {
 	return m.runServiceCommand("rc-service", name, action)
 }
 
+func tailLogLines(data []byte, lines int) []byte {
+	rows := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(rows) > lines {
+		rows = rows[len(rows)-lines:]
+	}
+	return []byte(strings.Join(rows, "\n"))
+}
+
+func filterServiceLogLines(data []byte, name string, lines int) []byte {
+	service := strings.ToLower(name)
+	shortName := strings.TrimPrefix(service, "gungun-")
+	matches := make([]string, 0, lines)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		lower := strings.ToLower(line)
+		relevant := strings.Contains(lower, service) ||
+			strings.Contains(lower, shortName) ||
+			strings.Contains(lower, "oom-kill") ||
+			strings.Contains(lower, "out of memory") ||
+			strings.Contains(lower, "killed process") ||
+			strings.Contains(lower, "segfault") ||
+			strings.Contains(lower, "permission denied")
+		if relevant {
+			matches = append(matches, line)
+		}
+	}
+	if len(matches) > lines {
+		matches = matches[len(matches)-lines:]
+	}
+	return []byte(strings.Join(matches, "\n"))
+}
+
 func (m *Manager) ServiceLogs(name string, lines int) ([]byte, error) {
 	if lines < 1 {
 		lines = 50
@@ -142,16 +173,51 @@ func (m *Manager) ServiceLogs(name string, lines int) ([]byte, error) {
 	if backend == "systemd" {
 		return m.runServiceCommand("journalctl", "-u", name, "-n", fmt.Sprint(lines), "--no-pager", "-o", "short-iso")
 	}
+
 	path := filepath.Join("/var/log", name+".log")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("OpenRC log unavailable at %s: %w", path, err)
+	data, fileErr := os.ReadFile(path)
+	if fileErr == nil && strings.TrimSpace(string(data)) != "" {
+		return tailLogLines(data, lines), nil
 	}
-	rows := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(rows) > lines {
-		rows = rows[len(rows)-lines:]
+
+	diagnostics := []string{}
+	if fileErr != nil {
+		diagnostics = append(diagnostics, fmt.Sprintf("OpenRC service log unavailable at %s: %v", path, fileErr))
+	} else {
+		diagnostics = append(diagnostics, fmt.Sprintf("OpenRC service log is empty: %s", path))
 	}
-	return []byte(strings.Join(rows, "\n")), nil
+
+	// Alpine images do not always run a syslog daemon that writes per-service
+	// output_log files. Try BusyBox logread and kernel messages before returning
+	// an empty diagnostic; this is especially useful when OpenRC reports "crashed".
+	if output, logErr := m.Command("logread"); logErr == nil {
+		if matched := filterServiceLogLines(output, name, lines); len(matched) > 0 {
+			return matched, nil
+		}
+		diagnostics = append(diagnostics, "logread has no matching service entries")
+	} else {
+		diagnostics = append(diagnostics, "logread unavailable: "+logErr.Error())
+	}
+
+	if output, dmesgErr := m.Command("dmesg"); dmesgErr == nil {
+		if matched := filterServiceLogLines(output, name, lines); len(matched) > 0 {
+			return matched, nil
+		}
+		diagnostics = append(diagnostics, "dmesg has no matching crash or OOM entries")
+	} else {
+		diagnostics = append(diagnostics, "dmesg unavailable: "+dmesgErr.Error())
+	}
+
+	for _, candidate := range []string{"/var/log/messages", "/var/log/syslog", "/var/log/daemon.log"} {
+		logData, readErr := os.ReadFile(candidate)
+		if readErr != nil {
+			continue
+		}
+		if matched := filterServiceLogLines(logData, name, lines); len(matched) > 0 {
+			return matched, nil
+		}
+	}
+	return []byte(strings.Join(diagnostics, "\n")), nil
 }
 
 func systemdUnit(name, command, root string) string {
