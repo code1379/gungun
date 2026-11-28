@@ -219,11 +219,13 @@ export class Orchestrator {
     services: Service[] | undefined,
     website: Website | undefined,
     step: Step,
+    signal?: AbortSignal,
   ) {
     const action = async () => {
+      if (signal?.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
       if (website) return this.deployInner(vps, undefined, website, step);
       if (!services?.length) throw new Error("请选择至少一个协议和接入方式");
-      return this.deployServices(vps, services, step);
+      return this.deployServices(vps, services, step, signal);
     };
     const run = this.cfLane.then(action, action);
     this.cfLane = run.catch(() => {});
@@ -239,6 +241,7 @@ export class Orchestrator {
     originalVps: VPS,
     input: Service[],
     step: Step,
+    signal?: AbortSignal,
   ) {
     const services = input.map((service) => serviceSchema.parse(service));
     const selected = new Set<string>();
@@ -477,8 +480,8 @@ export class Orchestrator {
             cf.tunnelConfig(vps.accountId, tunnel.id, ingress),
           ),
         );
-        await step("安装 / 更新 cloudflared", () =>
-          this.ssh.fq(vps, "core update cloudflared"),
+        await step("安装 / 更新 cloudflared", (_report, stepSignal) =>
+          this.ssh.fq(vps, "core update cloudflared", undefined, 300000, stepSignal),
         );
       } else if (!hasArgo && tunnelChanged && vps.tunnelId) {
         await this.updateTunnel(vps, state, step, undo);
@@ -763,8 +766,8 @@ export class Orchestrator {
             ),
           );
           undo.push(dns.undo);
-          await step("安装 cloudflared", () =>
-            this.ssh.fq(vps, "core update cloudflared"),
+          await step("安装 cloudflared", (_report, stepSignal) =>
+            this.ssh.fq(vps, "core update cloudflared", undefined, 300000, stepSignal),
           );
           this.store.saveVps(vps);
           undo.push(async () => {

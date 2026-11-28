@@ -168,7 +168,7 @@ export class SSH {
       await new Promise<void>((resolve, reject) => {
         client
           .once("ready", resolve)
-          .once("error", (e) => reject(new Error(verifyError || e.message)))
+          .on("error", (e) => reject(new Error(verifyError || e.message)))
           .connect({
             host: vps.address,
             port: vps.sshPort,
@@ -228,11 +228,13 @@ export class SSH {
         let exitCode: number | null | undefined;
         let exitSignal: string | undefined;
         let settled = false;
+        const onClientError = (error: Error) => finish(new Error("SSH 连接中断：" + error.message));
         const finish = (error?: Error, value?: string) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
+          c.client.removeListener("error", onClientError);
           if (error) reject(error);
           else resolve(value ?? "");
         };
@@ -241,6 +243,7 @@ export class SSH {
           finish(Object.assign(new Error("任务已取消，远程命令已中断"), { name: "AbortError" }));
           c.close();
         };
+        c.client.on("error", onClientError);
         signal?.addEventListener("abort", onAbort, { once: true });
         const timer = setTimeout(() => {
           finish(new Error(`SSH 命令超时（${timeoutMs} ms）：${command.slice(0, 500)}`));
@@ -300,17 +303,28 @@ export class SSH {
       c.close();
     }
   }
-  async fq<T>(vps: VPS, action: string, input?: unknown, timeoutMs = 300000): Promise<T> {
+  async fq<T>(
+    vps: VPS,
+    action: string,
+    input?: unknown,
+    timeoutMs = 300000,
+    signal?: AbortSignal,
+  ): Promise<T> {
     if (!/^[a-z][a-z -]*$/.test(action)) throw new Error("无效 fq 操作");
-    const command = `${vps.username === "root" ? "" : "sudo -n "}/usr/local/bin/fq ${action} --json`;
+    if (signal?.aborted) throw Object.assign(new Error("任务已取消"), { name: "AbortError" });
+    const command = (vps.username === "root" ? "" : "sudo -n ") +
+      "/usr/local/bin/fq " + action + " --json";
     const output = await this.run(
       vps,
       command,
       input === undefined ? "" : JSON.stringify(input),
       timeoutMs,
+      16 * 1024 * 1024,
+      signal,
     );
     return JSON.parse(output) as T;
   }
+
   async upload(
     vps: VPS,
     local: string,

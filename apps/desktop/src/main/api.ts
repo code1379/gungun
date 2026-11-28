@@ -314,7 +314,7 @@ export class API {
             ? "部署网站"
             : `批量部署协议服务（${services?.length || 0} 项）`,
           v.id,
-          (step) => this.orchestrator.deploy(v, services, parsed.website, step),
+          (step, signal) => this.orchestrator.deploy(v, services, parsed.website, step, signal),
           summary,
         );
       }
