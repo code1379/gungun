@@ -25,8 +25,12 @@ func services(_ prefs: SCPreferences) throws -> [SCNetworkService] {
     guard let all = SCNetworkServiceCopyAll(prefs) as? [SCNetworkService] else { try fail("网络服务列表读取失败") }
     return all
 }
+func serviceID(_ item: SCNetworkService) throws -> String {
+    guard let value = SCNetworkServiceGetServiceID(item) else { try fail("网络服务缺少有效标识") }
+    return value as String
+}
 func service(_ prefs: SCPreferences, _ id: String) throws -> SCNetworkService {
-    guard let found = try services(prefs).first(where: { (SCNetworkServiceGetServiceID($0) as String) == id }) else { try fail("所选网络服务已不存在") }
+    guard let found = try services(prefs).first(where: { try serviceID($0) == id }) else { try fail("所选网络服务已不存在") }
     return found
 }
 func proxyProtocol(_ service: SCNetworkService) throws -> SCNetworkProtocol {
@@ -42,7 +46,7 @@ func config(_ proto: SCNetworkProtocol) throws -> [String: Any] {
     return value
 }
 func apply(_ prefs: SCPreferences, _ proto: SCNetworkProtocol, _ value: [String: Any]) throws {
-    guard SCNetworkProtocolSetConfiguration(proto, value as CFDictionary), SCPreferencesCommitChanges(prefs), SCPreferencesApplyChanges(prefs) else { try fail("系统代理提交或应用失败：\(SCErrorString(SCError()).map { String(cString: $0) } ?? "unknown")") }
+    guard SCNetworkProtocolSetConfiguration(proto, value as CFDictionary), SCPreferencesCommitChanges(prefs), SCPreferencesApplyChanges(prefs) else { try fail("系统代理提交或应用失败：\(String(cString: SCErrorString(SCError())))") }
 }
 func primaryService() -> String {
     guard let store = SCDynamicStoreCreate(nil, serviceName as CFString, nil, nil) else { return "" }
@@ -160,8 +164,11 @@ final class Engine {
         if action == "services" {
             let primary = primaryService()
             return try services(prefs).filter { SCNetworkServiceGetEnabled($0) }.map { item -> [String: Any] in
-                let id = SCNetworkServiceGetServiceID(item) as String
-                return ["id": id, "name": (SCNetworkServiceGetName(item) as String?) ?? id, "active": id == primary, "proxies": try config(try proxyProtocol(item))]
+                let id = try serviceID(item)
+                let name: String
+                if let value = SCNetworkServiceGetName(item) { name = value as String }
+                else { name = id }
+                return ["id": id, "name": name, "active": id == primary, "proxies": try config(try proxyProtocol(item))]
             }
         }
         guard action == "enable", let id = input["serviceId"] as? String, let port = input["port"] as? Int, (1024...65535).contains(port) else { try fail("无效的系统代理请求") }
@@ -211,14 +218,24 @@ final class Listener: NSObject, NSXPCListenerDelegate {
     let engine = Engine()
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         // Pin both the designated requirement and the code hash of this registered helper.
-        var own: SecCode?; var requirement: SecRequirement?; var guest: SecCode?
+        var own: SecCode?; var guest: SecCode?
+        var ownStatic: SecStaticCode?; var guestStatic: SecStaticCode?
+        var requirement: SecRequirement?
+        // The Swift SDK separates running SecCode from on-disk SecStaticCode.
+        // Validate running code, then explicitly obtain static objects for APIs
+        // that inspect the designated requirement and signing metadata.
         guard SecCodeCopySelf([], &own) == errSecSuccess, let own = own,
-              SecCodeCopyDesignatedRequirement(own, [], &requirement) == errSecSuccess, let requirement = requirement,
+              SecCodeCheckValidity(own, [], nil) == errSecSuccess,
+              SecCodeCopyStaticCode(own, [], &ownStatic) == errSecSuccess, let ownStatic = ownStatic,
+              SecCodeCopyDesignatedRequirement(ownStatic, [], &requirement) == errSecSuccess, let requirement = requirement,
               SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)] as CFDictionary, [], &guest) == errSecSuccess, let guest = guest,
-              SecCodeCheckValidity(guest, [], requirement) == errSecSuccess else { return false }
+              SecCodeCheckValidity(guest, [], requirement) == errSecSuccess,
+              SecCodeCopyStaticCode(guest, [], &guestStatic) == errSecSuccess, let guestStatic = guestStatic,
+              SecStaticCodeCheckValidity(ownStatic, [], requirement) == errSecSuccess,
+              SecStaticCodeCheckValidity(guestStatic, [], requirement) == errSecSuccess else { return false }
         var info: CFDictionary?; var guestInfo: CFDictionary?
-        guard SecCodeCopySigningInformation(own, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              SecCodeCopySigningInformation(guest, SecCSFlags(rawValue: kSecCSSigningInformation), &guestInfo) == errSecSuccess,
+        guard SecCodeCopySigningInformation(ownStatic, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              SecCodeCopySigningInformation(guestStatic, SecCSFlags(rawValue: kSecCSSigningInformation), &guestInfo) == errSecSuccess,
               let ownHash = (info as? [String: Any])?[kSecCodeInfoUnique as String] as? Data,
               let guestHash = (guestInfo as? [String: Any])?[kSecCodeInfoUnique as String] as? Data,
               ownHash == guestHash else { return false }
