@@ -15,6 +15,7 @@ interface PendingTask {
 }
 
 type TaskRun = (step: Step, signal: AbortSignal) => Promise<unknown>;
+type TaskRunFactory = () => TaskRun;
 
 function abortError() {
   const error = new Error("任务已取消");
@@ -27,6 +28,7 @@ export class TaskCenter {
   private active = 0;
   private locks = new Set<string>();
   private controllers = new Map<string, AbortController>();
+  private retryFactories = new Map<string, TaskRunFactory>();
 
   constructor(
     private store: Store,
@@ -34,12 +36,26 @@ export class TaskCenter {
     private limit = 4,
   ) {}
 
-  submit(type: string, vpsId: string | null, run: TaskRun, summary?: string) {
+  submit(type: string, vpsId: string | null, run: TaskRun, summary?: string, retryFactory?: TaskRunFactory) {
     const task = this.store.task(type, vpsId, summary);
+    if (retryFactory) this.retryFactories.set(task.id, retryFactory);
     this.pending.push({ task, run, controller: new AbortController() });
     this.notify();
     this.pump();
     return task.id;
+  }
+
+  canRetry(id: string) {
+    const task = this.store.get<Task>("tasks", id);
+    return task.state === "failed" && this.retryFactories.has(id);
+  }
+
+  retry(id: string) {
+    const task = this.store.get<Task>("tasks", id);
+    if (task.state !== "failed") throw new Error("只有失败的任务可以重新执行");
+    const factory = this.retryFactories.get(id);
+    if (!factory) throw new Error("此任务没有可用的重试上下文，请从原功能页面重新提交");
+    return this.submit(task.type, task.vpsId, factory(), task.summary, factory);
   }
 
   cancel(id: string) {
@@ -153,6 +169,7 @@ export class TaskCenter {
       }
     }
     this.save(task);
+    if (task.state !== "failed") this.retryFactories.delete(task.id);
   }
 
   report(id: string, completed: number, total: number, output?: unknown) {
