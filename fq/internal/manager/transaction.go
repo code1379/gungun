@@ -327,9 +327,28 @@ func (m *Manager) verify(s State) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+	// Collect potentially expensive service logs only once, after readiness
+	// retries are exhausted, rather than invoking logread/journalctl every 200ms.
+	for _, item := range []struct {
+		name    string
+		enabled bool
+	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", caddyRequired(s)}, {"gungun-tunnel", s.TunnelToken != ""}} {
+		if !item.enabled || !strings.Contains(last.Error(), "service "+item.name+" status check failed") {
+			continue
+		}
+		log, logErr := m.ServiceLogs(item.name, 100)
+		details := []string{last.Error()}
+		if logErr != nil {
+			details = append(details, "service log read failed: "+logErr.Error())
+		} else if text := strings.TrimSpace(string(log)); text != "" {
+			details = append(details, "recent service logs:\n"+text)
+		} else {
+			details = append(details, "service log is empty")
+		}
+		last = errors.New(strings.Join(details, "\n"))
+	}
 	return last
 }
-
 func checkTunnelReady(client *http.Client, endpoint string) error {
 	response, err := client.Get(endpoint)
 	if err != nil {
@@ -350,21 +369,11 @@ func (m *Manager) verifyOnce(s State) error {
 		if item.enabled {
 			status, statusErr := m.ServiceAction(item.name, "status")
 			if statusErr != nil {
-				log, logErr := m.ServiceLogs(item.name, 100)
-				details := []string{
-					fmt.Sprintf("service %s status check failed: %v", item.name, statusErr),
-				}
+				details := fmt.Sprintf("service %s status check failed: %v", item.name, statusErr)
 				if text := strings.TrimSpace(string(status)); text != "" {
-					details = append(details, "service status output:\n"+text)
+					details += "\nservice status output:\n" + text
 				}
-				if logErr != nil {
-					details = append(details, "service log read failed: "+logErr.Error())
-				} else if text := strings.TrimSpace(string(log)); text != "" {
-					details = append(details, "recent service logs:\n"+text)
-				} else {
-					details = append(details, "service log is empty")
-				}
-				return errors.New(strings.Join(details, "\n"))
+				return errors.New(details)
 			}
 		}
 	}
