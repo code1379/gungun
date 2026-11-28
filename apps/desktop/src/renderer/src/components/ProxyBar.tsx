@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, Play, Square, RefreshCw, ScrollText } from "lucide-react";
 import type { RuntimeStatus } from "../../../main/local-runtime";
-import type {
-  SystemProxyStatus,
-  NetworkService,
-} from "../../../main/system-proxy";
+import type { SystemProxyStatus } from "../../../main/system-proxy";
 import { useApp } from "../api";
-import { Badge, Button, Modal, Select } from "./ui";
+import { Badge, Button, Modal } from "./ui";
+import NetworkServicePicker, {
+  useNetworkServices,
+} from "./NetworkServicePicker";
 export default function ProxyBar({
   openSettings,
 }: {
@@ -17,7 +17,7 @@ export default function ProxyBar({
     runtime: RuntimeStatus;
     system: SystemProxyStatus;
   } | null>(null);
-  const [services, setServices] = useState<NetworkService[]>([]);
+  const network = useNetworkServices();
   const [serviceId, setService] = useState("");
   const [choose, setChoose] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -61,16 +61,15 @@ export default function ProxyBar({
       }
     }).finally(() => setBusy(false));
   };
-  const network = () =>
-    void run(async () => {
-      const list = await call<NetworkService[]>("networkServices");
-      setServices(list);
-      const selected =
-        list.find(
-          (s) => s.id === data?.settings.networkServiceId && s.active,
-        ) || list.find((s) => s.active);
-      setService(selected?.id || "");
-    });
+  const loadNetwork = async () => {
+    setService("");
+    const list = await network.reload();
+    if (!list) return;
+    const selected =
+      list.find((s) => s.id === data?.settings.networkServiceId && s.active) ||
+      list.find((s) => s.active);
+    setService(selected?.id || "");
+  };
   const running = status?.runtime.state === "running";
   const processing =
     busy || ["starting", "switching"].includes(status?.runtime.state || "");
@@ -144,7 +143,7 @@ export default function ProxyBar({
           if (status?.system.conflict) openSettings();
           else if (status?.system.enabled) action("disableSystem");
           else {
-            network();
+            void loadNetwork();
             setChoose(true);
           }
         }}
@@ -179,23 +178,29 @@ export default function ProxyBar({
         title="选择网络服务"
         description="只设置选中的活动网络服务，关闭后恢复此服务原来的 HTTP、HTTPS、SOCKS、PAC 和绕过列表。"
       >
-        <Select
-          aria-label="活动网络服务"
+        <NetworkServicePicker
+          {...network}
           value={serviceId}
           onValueChange={setService}
+        />
+        <Button
+          variant="ghost"
+          loading={network.loading}
+          onClick={() => void loadNetwork()}
         >
-          {services.map((s) => (
-            <option key={s.id} value={s.id} disabled={!s.active}>
-              {s.name}
-              {s.active ? "（活动）" : "（非活动）"}
-            </option>
-          ))}
-        </Select>
+          刷新网络服务
+        </Button>
         <p className="hint py-3">
           首次使用请先在设置中安装并授权系统代理辅助程序。
         </p>
         <Button
-          disabled={!serviceId || busy}
+          disabled={
+            !serviceId ||
+            busy ||
+            network.loading ||
+            !!network.error ||
+            !network.services.some((s) => s.id === serviceId && s.active)
+          }
           onClick={() => {
             setChoose(false);
             action("enableSystem");

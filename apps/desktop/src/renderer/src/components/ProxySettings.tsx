@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Settings } from "@gungun/domain";
-import type { NetworkService } from "../../../main/system-proxy";
 import { useApp } from "../api";
-import { Button, Field, Input, Select } from "./ui";
+import { Button, Field, Input } from "./ui";
+import NetworkServicePicker, {
+  useNetworkServices,
+} from "./NetworkServicePicker";
 export default function ProxySettings({
   values,
   update,
@@ -11,14 +13,13 @@ export default function ProxySettings({
   update: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 }) {
   const { call, run } = useApp();
-  const [services, setServices] = useState<NetworkService[]>([]);
+  const network = useNetworkServices();
+  const services = network.services;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
   useEffect(() => {
-    void call<NetworkService[]>("networkServices")
-      .then(setServices)
-      .catch(() => {});
-  }, [call]);
+    void network.reload();
+  }, [network.reload]);
   const execute = (fn: () => Promise<unknown>) => {
     setBusy(true);
     setResult("");
@@ -44,18 +45,12 @@ export default function ProxySettings({
           />
         </Field>
         <Field label="首选网络服务">
-          <Select
+          <NetworkServicePicker
+            {...network}
+            allowAuto
             value={values.networkServiceId}
             onValueChange={(id) => update("networkServiceId", id)}
-          >
-            <option value="">每次开启时选择活动服务</option>
-            {services.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.active ? "（活动）" : ""}
-              </option>
-            ))}
-          </Select>
+          />
         </Field>
       </div>
       <div className="toolbar wrap">
@@ -88,10 +83,9 @@ export default function ProxySettings({
           安装 / 授权系统代理辅助程序
         </Button>
         <Button
-          disabled={busy}
-          onClick={() =>
-            execute(async () => setServices(await call("networkServices")))
-          }
+          disabled={busy || network.loading}
+          loading={network.loading}
+          onClick={() => void network.reload()}
         >
           刷新网络服务
         </Button>
@@ -103,7 +97,7 @@ export default function ProxySettings({
       )}
       <p className="hint">
         系统代理需要已签名安装的
-        Gungun.app。首次授权由系统处理，后续开关通过辅助程序复用授权，不保存管理员密码。
+        Gungun.app；网络服务查询在开发模式下也可使用。首次授权由系统处理，后续开关通过辅助程序复用授权，不保存管理员密码。
       </p>
       {services.map((s) => (
         <details key={s.id}>

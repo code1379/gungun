@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
+import { readMacNetworkServices } from "./network-services";
 import type { Chain, ProxyNode } from "@gungun/domain";
 import type { ActiveProxy, LocalRuntime } from "./local-runtime";
 export interface NetworkService {
@@ -33,7 +34,12 @@ export interface ProxyAdapter {
   authorize(): Promise<unknown>;
 }
 export class MacProxyAdapter implements ProxyAdapter {
-  constructor(private binary: string | undefined) {}
+  constructor(
+    private binary: string | undefined,
+    private readServices: () => Promise<
+      NetworkService[]
+    > = readMacNetworkServices,
+  ) {}
   private call<T>(mode: string, input?: unknown): Promise<T> {
     if (process.platform !== "darwin")
       return Promise.reject(
@@ -81,6 +87,7 @@ export class MacProxyAdapter implements ProxyAdapter {
     });
   }
   request<T>(action: string, input: Record<string, unknown> = {}) {
+    if (action === "services") return this.readServices() as Promise<T>;
     return this.call<T>("request", { ...input, action });
   }
   authorize() {
