@@ -348,7 +348,24 @@ func (m *Manager) verifyOnce(s State) error {
 		enabled bool
 	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", caddyRequired(s)}, {"gungun-tunnel", s.TunnelToken != ""}} {
 		if item.enabled {
-			if _, e := m.ServiceAction(item.name, "status"); e != nil { return e }
+			status, statusErr := m.ServiceAction(item.name, "status")
+			if statusErr != nil {
+				log, logErr := m.ServiceLogs(item.name, 100)
+				details := []string{
+					fmt.Sprintf("service %s status check failed: %v", item.name, statusErr),
+				}
+				if text := strings.TrimSpace(string(status)); text != "" {
+					details = append(details, "service status output:\n"+text)
+				}
+				if logErr != nil {
+					details = append(details, "service log read failed: "+logErr.Error())
+				} else if text := strings.TrimSpace(string(log)); text != "" {
+					details = append(details, "recent service logs:\n"+text)
+				} else {
+					details = append(details, "service log is empty")
+				}
+				return errors.New(strings.Join(details, "\n"))
+			}
 		}
 	}
 	if s.TunnelToken != "" {
