@@ -631,14 +631,16 @@ func TestVerifyOnceIncludesServiceNameAndLogsWhenServiceCrashed(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected crashed service verification to fail")
 	}
+	if !strings.Contains(err.Error(), "gungun-sing-box") || !strings.Contains(err.Error(), "exit status 3") {
+		t.Fatalf("verification error should identify the failed service: %v", err)
+	}
+	diagnosed := m.withServiceLogs(state, err)
 	for _, expected := range []string{
-		"gungun-sing-box",
-		"exit status 3",
 		"recent service logs",
 		"failed to bind listener",
 	} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("verification error missing %q: %v", expected, err)
+		if !strings.Contains(diagnosed.Error(), expected) {
+			t.Fatalf("diagnostic error missing %q: %v", expected, diagnosed)
 		}
 	}
 }
