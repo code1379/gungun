@@ -68,6 +68,15 @@ func staticSiteRoute(domain string) M {
 
 func CaddyConfig(s State, root string) M {
 	servers := M{}
+	// Caddy enables HTTP/3 by default on TLS listeners. HTTP/3 binds UDP on
+	// the same numeric port as HTTPS, so it conflicts with TUIC/Hysteria2
+	// when Gungun intentionally shares a TCP and UDP port number.
+	udpPorts := map[int]bool{}
+	for _, service := range s.Services {
+		if service.Protocol == "tuic" || service.Protocol == "hysteria2" {
+			udpPorts[service.Port] = true
+		}
+	}
 	serverFor := func(port int, listen string, tlsEnabled bool) M {
 		name := fmt.Sprintf("port_%d", port)
 		server, ok := servers[name].(M)
@@ -83,6 +92,11 @@ func CaddyConfig(s State, root string) M {
 		}
 		if tlsEnabled {
 			server["tls_connection_policies"] = []any{M{}}
+			if udpPorts[port] {
+				// Keep HTTPS over TCP (HTTP/1.1 + HTTP/2), but do not let
+				// Caddy claim the UDP socket already used by TUIC/Hysteria2.
+				server["protocols"] = []string{"h1", "h2"}
+			}
 		}
 		return server
 	}

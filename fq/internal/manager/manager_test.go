@@ -762,6 +762,40 @@ func TestVlessWSNodeDomainUsesSharedCamouflageFallback(t *testing.T) {
 	if _, ok := config["apps"].(M)["tls"]; !ok { t.Fatal("Caddy must load the source certificate for node domains") }
 }
 
+func TestCaddyDisablesHTTP3WhenTLSPortIsSharedWithUDPProxy(t *testing.T) {
+	state := fixture()
+	tuic := service("tuic", 48001)
+	site := Website{
+		ID: "site",
+		Domain: "site.a7k2p.example.com",
+		Target: "127.0.0.1",
+		TargetPort: 8080,
+		Access: "direct",
+		Port: 48001,
+		PublicPort: 48001,
+		EdgePort: 443,
+	}
+	state.Services = []Service{tuic}
+	state.Websites = []Website{site}
+	if err := state.Normalize(); err != nil {
+		t.Fatalf("TCP HTTPS and UDP TUIC may share a numeric port: %v", err)
+	}
+
+	config := CaddyConfig(state, "/etc/gungun")
+	servers := config["apps"].(M)["http"].(M)["servers"].(M)
+	server := servers["port_48001"].(M)
+	protocols, ok := server["protocols"].([]string)
+	if !ok {
+		t.Fatalf("Caddy TLS listener must declare protocols when sharing a UDP port: %#v", server["protocols"])
+	}
+	if strings.Join(protocols, ",") != "h1,h2" {
+		t.Fatalf("Caddy protocols = %#v, want only h1 and h2 to avoid TUIC UDP collision", protocols)
+	}
+	if _, ok := server["tls_connection_policies"]; !ok {
+		t.Fatal("disabling HTTP/3 must preserve HTTPS/TLS on TCP")
+	}
+}
+
 func TestArgoOnlyVlessWSCaddyListenerIsLoopback(t *testing.T) {
 	state := fixture()
 	v := service("vless-ws", 45516)
