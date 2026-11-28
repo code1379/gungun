@@ -19,26 +19,96 @@ interface DNSRecord {
   proxied: boolean;
   ttl: number;
 }
+
+function describeFetchError(error: unknown) {
+  const details: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof Error) {
+      const code = (current as NodeJS.ErrnoException).code;
+      details.push(`${current.name}: ${current.message}${code ? ` (${code})` : ""}`);
+      current = (current as Error & { cause?: unknown }).cause;
+    } else {
+      details.push(String(current));
+      break;
+    }
+  }
+  return details.join(" <- ") || String(error);
+}
+
+function isRetryableFetchError(error: unknown) {
+  const retryableCodes = new Set([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "EAI_AGAIN",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT",
+  ]);
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof Error) {
+      const code = (current as NodeJS.ErrnoException).code;
+      if (
+        retryableCodes.has(code || "") ||
+        current.name === "TimeoutError" ||
+        current instanceof TypeError
+      )
+        return true;
+      current = (current as Error & { cause?: unknown }).cause;
+    } else break;
+  }
+  return false;
+}
 export class Cloudflare {
   constructor(
     private settings: Pick<Settings, "cloudflareEmail" | "cloudflareKey">,
     private base = "https://api.cloudflare.com/client/v4",
   ) {}
   async request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-    const r = await fetch(this.base + path, {
-      method,
-      headers: {
-        "X-Auth-Email": this.settings.cloudflareEmail,
-        "X-Auth-Key": this.settings.cloudflareKey,
-        "Content-Type": "application/json",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
-    });
-    const d = (await r.json()) as CFResponse<T>;
-    if (!r.ok || !d.success)
+    const requestMethod = method.toUpperCase();
+    const attempts = requestMethod === "GET" ? 3 : 1;
+    let response: Response | undefined;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        response = await fetch(this.base + path, {
+          method: requestMethod,
+          headers: {
+            "X-Auth-Email": this.settings.cloudflareEmail,
+            "X-Auth-Key": this.settings.cloudflareKey,
+            "Content-Type": "application/json",
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: AbortSignal.timeout(30000),
+        });
+        break;
+      } catch (error) {
+        const detail = describeFetchError(error);
+        if (attempt < attempts && isRetryableFetchError(error)) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+          continue;
+        }
+        throw new Error(
+          `Cloudflare API 网络请求失败（${requestMethod} ${path}）：${detail}`,
+          { cause: error },
+        );
+      }
+    }
+
+    if (!response) throw new Error(`Cloudflare API 请求失败（${requestMethod} ${path}）`);
+    const d = (await response.json()) as CFResponse<T>;
+    if (!response.ok || !d.success)
       throw new Error(
-        `Cloudflare ${r.status}: ${d.errors?.map((x) => `${x.code} ${x.message}`).join("; ") || "请求失败"}`,
+        `Cloudflare ${response.status}: ${d.errors?.map((x) => `${x.code} ${x.message}`).join("; ") || "请求失败"}`,
       );
     return d.result;
   }
