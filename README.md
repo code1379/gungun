@@ -52,11 +52,11 @@ Cloudflare、真实 VPS、NAT 映射、Apple 签名与公证等外部条件及�
 
 ## 第一阶段：Cloudflare 与本机代理
 
-本轮以 `unified-singbox-ui` 的 `7ec4fe9` 为基线开发。新增功能已经接入桌面应用；**真实 Cloudflare、Apple Silicon 系统代理以及原生辅助程序编译/授权仍待验收，目前不标记为最终交付完成**。
+本轮以 `unified-singbox-ui` 的 `7ec4fe9` 为基线开发。新增功能已经接入桌面应用；**用户已在 Apple Silicon Mac 确认系统代理授权、开启、重复开关和关闭恢复可用；真实 Cloudflare 及异常恢复等边界场景仍待验收，目前不标记为最终交付完成**。
 
 - 一级 Cloudflare 导航：账号 / Zone、DNS 查询与增删改、固定 Tunnel 与 VPS 映射和路由管理、Edge 证书查询 / 覆盖检查、Origin Rules 增删改、启停及排序。外部资源修改需要额外确认，陈旧快照拒绝覆盖；部署和资源页面共用规则与写入队列。
 - 底部本机代理栏：活动节点 / ID 引用链路、sing-box 状态、启动 / 停止 / 重启、实时脱敏日志、系统代理开关。默认 mixed inbound 为 `127.0.0.1:10808`，设置中可调整；点击节点行只选中，右键设置活动节点。
-- macOS 系统代理：SMAppService 特权辅助程序、受代码签名及代码哈希校验的 XPC、完整网络代理快照、写前恢复日志、心跳看护和外部修改冲突保护。开发模式可以运行本机核心并只读查看网络服务；系统代理辅助程序需要位于已签名的 `.app` 中，并在 macOS 后台项目中获准运行。首次授权与后续无重复密码的行为尚未在真机验证。
+- macOS 系统代理：SMAppService 特权辅助程序、受代码签名及代码哈希校验的 XPC、完整网络代理快照、写前恢复日志、心跳看护和外部修改冲突保护。开发模式可以运行本机核心并只读查看网络服务；系统代理辅助程序需要位于已签名的 `.app` 中，并在 macOS 后台项目中获准运行。用户已确认基本授权、开启、重复开关及关闭恢复通过，异常退出 / 重启 / 多网络服务 / PAC 场景仍待专项验证。
 
 新增检查命令：
 
@@ -69,6 +69,6 @@ pnpm test:macos-helper       # 必须在 Apple Silicon macOS 原生编译检查
 pnpm test:macos-bundle       # 在 Mac 检查最终 .app 与原生产物签名，不注册或改网络
 ```
 
-仅在准备真机验收时，可用 `pnpm package:mac:dir` 自动完成生产构建、资源完整性检查、本地 ad-hoc 签名及最终应用签名校验；此命令不生成 DMG、不上传资产，不提交 Apple 公证。若本机 pnpm 提示包管理器记录过期，先运行 `pnpm install --no-frozen-lockfile` 同步锁文件。`test:macos-helper` 同时检查 Swift 助手和 Objective-C++ 注册模块；注册由 Electron 主进程调用 SMAppService，打包时把模块、助手和 LaunchDaemon 放入同一个 app 并纳入签名。当前已修正注册进程、状态处理和本地签名路径，真实 Mac 注册 / 批准仍待复验。本轮没有生成安装包，也没有启动 GitHub Actions。完整实测状态、真机步骤和已知限制见[测试报告](docs/测试报告.md)。
+可用 `pnpm package:mac:dir` 自动完成生产构建、资源完整性检查、本地 ad-hoc 签名及最终应用签名校验；此命令不生成 DMG、不上传资产，不提交 Apple 公证。若本机 pnpm 提示包管理器记录过期，先运行 `pnpm install --no-frozen-lockfile` 同步锁文件。`test:macos-helper` 同时检查 Swift 助手和 Objective-C++ 注册模块；注册由 Electron 主进程调用 SMAppService，打包时把模块、助手和 LaunchDaemon 放入同一个 app 并纳入签名。用户已在 Mac 本地构建应用并确认注册 / 批准和系统代理基本流程可用；未生成 DMG 或启动 GitHub Actions。完整实测状态、真机步骤和已知限制见[测试报告](docs/测试报告.md)。
 
 本地 `.app` 重建前先用 ⌘Q 退出旧实例；`pnpm dev` 的输出不等于完整生产构建。`pnpm test:desktop-build` 可独立检查打包前资源，Mac 实际启动仍需单独验收。
