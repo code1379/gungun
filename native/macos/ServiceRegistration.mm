@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <Security/Security.h>
 #include <node_api.h>
 
 // Loaded only by the Electron main process. SMAppService resolves daemon plists
@@ -17,6 +18,19 @@ static NSString *statusName(SMAppServiceStatus status) {
         case SMAppServiceStatusNotFound: return @"notFound";
         default: return @"unknown";
     }
+}
+
+static NSString *signatureError(NSBundle *bundle) {
+    SecStaticCodeRef code = nullptr;
+    OSStatus status = SecStaticCodeCreateWithPath((__bridge CFURLRef)bundle.bundleURL, kSecCSDefaultFlags, &code);
+    if (status == errSecSuccess) {
+        status = SecStaticCodeCheckValidity(code,
+            static_cast<SecCSFlags>(kSecCSStrictValidate | kSecCSCheckNestedCode | kSecCSCheckAllArchitectures), nullptr);
+    }
+    if (code) CFRelease(code);
+    if (status == errSecSuccess) return nil;
+    NSString *message = CFBridgingRelease(SecCopyErrorMessageString(status, nullptr));
+    return [NSString stringWithFormat:@"应用代码签名或资源封装无效（Security:%d）：%@；请完全退出 Gungun，运行 pnpm package:mac:dir 重新构建带本地签名的应用，再运行 pnpm test:macos-bundle 检查。Bundle：%@", (int)status, message ?: @"未知签名错误", bundle.bundlePath];
 }
 
 static napi_value registerService(napi_env env, napi_callback_info) {
@@ -39,6 +53,8 @@ static napi_value registerService(napi_env env, napi_callback_info) {
             NSString *helper = [bundle.bundlePath stringByAppendingPathComponent:plist[@"BundleProgram"]];
             if (![files isExecutableFileAtPath:helper])
                 return fail(env, [@"应用内缺少可执行的系统代理辅助程序：" stringByAppendingString:helper]);
+            NSString *invalidSignature = signatureError(bundle);
+            if (invalidSignature) return fail(env, invalidSignature);
 
             SMAppService *service = [SMAppService daemonServiceWithPlistName:@"io.gungun.proxy-helper.plist"];
             // notFound describes service lookup, not necessarily a missing plist.

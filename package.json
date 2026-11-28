@@ -23,6 +23,7 @@
     "test:macos-proxy": "node scripts/verify-macos-proxy.mjs",
     "test:local-configs": "vitest run --config vitest.core.config.ts",
     "test:macos-helper": "node scripts/check-macos-helper.mjs",
+    "test:macos-bundle": "node scripts/check-macos-bundle.mjs",
     "package:mac:dir": "pnpm fq:build && pnpm --filter @gungun/desktop package:mac:dir",
     "test:desktop-build": "node scripts/check-desktop-build.mjs"
   },

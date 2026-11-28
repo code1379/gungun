@@ -87,7 +87,11 @@ describe("桌面打包前的生产资源检查", () => {
 });
 
 describe("打包命令的构建顺序（模拟命令，不生成应用）", () => {
-  async function executePackaging(failBuild: boolean) {
+  async function executePackaging(
+    failBuild: boolean,
+    failPackage = false,
+    failVerification = false,
+  ) {
     const path = await fixture(false);
     const { readFile, chmod } = await import("node:fs/promises");
     const { execFile } = await import("node:child_process");
@@ -97,11 +101,11 @@ describe("打包命令的构建顺序（模拟命令，不生成应用）", () =
     const log = join(path, "sequence.txt");
     await writeFile(
       join(bin, "pnpm"),
-      `#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(log)},'build\\n');process.exit(${failBuild ? 1 : 0});\n`,
+      `#!${process.execPath}\nconst fs=require('node:fs');const verify=process.argv[3]==='check:mac:bundle';fs.appendFileSync(${JSON.stringify(log)},verify?'verify\\n':'build\\n');process.exit(verify?${failVerification ? 1 : 0}:${failBuild ? 1 : 0});\n`,
     );
     await writeFile(
       join(bin, "electron-builder"),
-      `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(log)},'package\\n');\n`,
+      `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(log)},'package\\n');if(!process.argv.includes('--config.mac.identity=-')||!process.argv.includes('--config.mac.notarize=false'))process.exit(2);process.exit(${failPackage ? 1 : 0});\n`,
     );
     await chmod(join(bin, "pnpm"), 0o755);
     await chmod(join(bin, "electron-builder"), 0o755);
@@ -126,16 +130,28 @@ describe("打包命令的构建顺序（模拟命令，不生成应用）", () =
     }
     return { failed, sequence: await readFile(log, "utf8") };
   }
-  it("先完成生产构建才调用打包器", async () => {
+  it("先生产构建，再强制本地签名打包，最后检查完整应用签名", async () => {
     expect(await executePackaging(false)).toEqual({
       failed: false,
-      sequence: "build\npackage\n",
+      sequence: "build\npackage\nverify\n",
     });
   });
   it("生产构建失败时不会继续打包旧文件", async () => {
     expect(await executePackaging(true)).toEqual({
       failed: true,
       sequence: "build\n",
+    });
+  });
+  it("打包失败不会校验旧应用或报告成功", async () => {
+    expect(await executePackaging(false, true)).toEqual({
+      failed: true,
+      sequence: "build\npackage\n",
+    });
+  });
+  it("最终应用签名检查失败，整条打包命令失败", async () => {
+    expect(await executePackaging(false, false, true)).toEqual({
+      failed: true,
+      sequence: "build\npackage\nverify\n",
     });
   });
 });

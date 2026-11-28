@@ -10,7 +10,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build && node ../../scripts/create-icon.mjs",
     "package:mac": "pnpm run build && electron-builder --mac --arm64 --publish never",
-    "package:mac:dir": "pnpm run build && electron-builder --mac dir --arm64 --publish never"
+    "package:mac:dir": "pnpm run build && electron-builder --mac dir --arm64 --publish never --config.mac.identity=- --config.mac.notarize=false && pnpm run check:mac:bundle",
+    "check:mac:bundle": "node ../../scripts/check-macos-bundle.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",

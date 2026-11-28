@@ -19,6 +19,8 @@ function registrationArgs(root, output) {
     "Foundation",
     "-framework",
     "ServiceManagement",
+    "-framework",
+    "Security",
     join(root, "native/macos/ServiceRegistration.mm"),
     ...(output
       ? ["-bundle", "-undefined", "dynamic_lookup", "-o", output]

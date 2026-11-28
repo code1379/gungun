@@ -1,6 +1,10 @@
 /* eslint @typescript-eslint/no-require-imports: "off" */
 module.exports = async ({ electronPlatformName, appOutDir, packager }) => {
-  if (electronPlatformName !== "darwin" || !process.env.APPLE_ID) return;
+  if (electronPlatformName !== "darwin") return;
+  // Local dir builds explicitly use an ad-hoc identity. Never submit those to
+  // Apple's notary service, even if the developer has APPLE_ID in their shell.
+  if (packager.platformSpecificBuildOptions.identity === "-") return;
+  if (!process.env.APPLE_ID) return;
   for (const name of ["APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"])
     if (!process.env[name]) throw new Error(`Missing ${name}`);
   const { execFileSync } = require("node:child_process");
