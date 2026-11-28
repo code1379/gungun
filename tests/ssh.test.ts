@@ -41,6 +41,7 @@ async function listen(forward: boolean) {
           const session = accept();
           session.on("exec", (accept, _reject, info) => {
             const stream = accept();
+            if (info.command === "hang") return;
             stream.write(`executed:${info.command}\n`);
             stream.exit(0);
             stream.end();
@@ -198,6 +199,19 @@ describe("真实 SSH 握手与跳板通道", () => {
     store.trust(`${target.address}:${target.sshPort}`, fingerprint);
     expect(await ssh.run(target, "uname -s")).toBe("executed:uname -s\n");
   });
+  it("取消正在执行的 SSH 命令会关闭通道并返回 AbortError", async () => {
+    const controller = new AbortController();
+    const pending = ssh.run(target, "hang", "", 120000, 1024 * 1024, controller.signal);
+    setTimeout(() => controller.abort(), 30);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("握手后 SSH socket 再次报错不会成为未处理异常", async () => {
+    const connection = await ssh.connect(target);
+    expect(() => connection.client.emit("error", new Error("ECONNRESET"))).not.toThrow();
+    connection.close();
+  });
+
   it("保存错误指纹会拒绝连接", async () => {
     store.trust(`${target.address}:${target.sshPort}`, "SHA256:wrong");
     await expect(ssh.run(target, "whoami")).rejects.toThrow("HOST_KEY_CHANGED");
