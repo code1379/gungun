@@ -68,6 +68,6 @@ pnpm test:local-runtime      # 真实进程和 HTTP/SOCKS，当前 Linux 容器�
 pnpm test:macos-helper       # 必须在 Apple Silicon macOS 原生编译检查
 ```
 
-仅在准备真机验收时，可用 `pnpm package:mac:dir` 自动完成生产构建、资源完整性检查并生成本地 `.app` 目录；此命令不生成 DMG、不上传资产。本轮没有生成安装包，也没有启动 GitHub Actions。完整实测状态、真机步骤和已知限制见[测试报告](docs/测试报告.md)。
+仅在准备真机验收时，可用 `pnpm package:mac:dir` 自动完成生产构建、资源完整性检查并生成本地 `.app` 目录；此命令不生成 DMG、不上传资产。更新依赖后先运行 `pnpm setup:install`。`test:macos-helper` 同时检查 Swift 助手和 Objective-C++ 注册模块；注册由 Electron 主进程调用 SMAppService，打包时把模块、助手和 LaunchDaemon 放入同一个 app 并纳入签名。当前已修正注册进程及状态处理，真实 Mac 注册 / 批准仍待复验。本轮没有生成安装包，也没有启动 GitHub Actions。完整实测状态、真机步骤和已知限制见[测试报告](docs/测试报告.md)。
 
 本地 `.app` 重建前先用 ⌘Q 退出旧实例；`pnpm dev` 的输出不等于完整生产构建。`pnpm test:desktop-build` 可独立检查打包前资源，Mac 实际启动仍需单独验收。

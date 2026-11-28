@@ -1,12 +1,10 @@
 import Foundation
 import SystemConfiguration
-import ServiceManagement
 import Security
 import Darwin
 
 // One binary serves as the signed XPC client and the root launch daemon.
 let serviceName = "io.gungun.proxy-helper"
-let plistName = serviceName + ".plist"
 @objc protocol ProxyProtocol {
     func request(_ data: Data, withReply reply: @escaping (Data) -> Void)
 }
@@ -248,18 +246,7 @@ final class Listener: NSObject, NSXPCListenerDelegate {
     let mode = CommandLine.arguments.dropFirst().first ?? "request"
     do {
         if mode == "register" || mode == "authorization" {
-            let service = SMAppService.daemon(plistName: plistName)
-            if mode == "register" && service.status == .notRegistered { try service.register() }
-            if mode == "register" && service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-            let state: String
-            switch service.status {
-            case .notRegistered: state = "notRegistered"
-            case .enabled: state = "enabled"
-            case .requiresApproval: state = "requiresApproval"
-            case .notFound: state = "notFound"
-            @unknown default: state = "unknown"
-            }
-            print(String(data: encode(["ok": true, "value": ["status": state]]), encoding: .utf8)!); return
+            try fail("请在 Gungun.app 设置中授权；SMAppService 必须由应用主进程调用")
         }
         let input = FileHandle.standardInput.readDataToEndOfFile()
         guard input.count <= 65536 else { try fail("请求过大") }

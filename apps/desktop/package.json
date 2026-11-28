@@ -81,7 +81,8 @@
       "icon": "build/icon.png",
       "minimumSystemVersion": "13.0",
       "binaries": [
-        "Contents/MacOS/gungun-proxy-helper"
+        "Contents/MacOS/gungun-proxy-helper",
+        "Contents/Resources/native/gungun-service-registration.node"
       ]
     },
     "dmg": {

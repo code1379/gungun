@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import nativeBuild from "./prepare-macos-helper.cjs";
 if (process.platform !== "darwin" || process.arch !== "arm64")
   throw new Error(
     "此检查必须在 Apple Silicon macOS 上执行，当前环境不能替代原生编译验收",
@@ -23,6 +24,9 @@ execFileSync(
   ],
   { stdio: "inherit" },
 );
+execFileSync("/usr/bin/xcrun", nativeBuild.registrationArgs(resolve(".")), {
+  stdio: "inherit",
+});
 console.log(
-  "macOS helper Swift typecheck passed. Authorization and network changes still require real integration verification.",
+  "macOS helper Swift and Objective-C++ registration checks passed. Authorization and network changes still require real integration verification.",
 );

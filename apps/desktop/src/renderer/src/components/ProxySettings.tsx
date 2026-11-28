@@ -69,13 +69,13 @@ export default function ProxySettings({
           loading={busy}
           onClick={() =>
             execute(async () => {
-              const result = await call<{ status: string }>("authorizeProxy");
+              const result = await call<{
+                status: "enabled" | "requiresApproval";
+              }>("authorizeProxy");
               setResult(
                 result.status === "enabled"
                   ? "系统代理辅助程序已授权"
-                  : result.status === "notFound"
-                    ? "未找到随应用打包的 LaunchDaemon，请重新构建并安装 Gungun.app"
-                    : "请在 macOS 系统设置 → 通用 → 登录项与扩展中允许 Gungun 后台辅助程序，然后重试",
+                  : "请在 macOS 系统设置 → 通用 → 登录项与扩展中允许 Gungun 后台辅助程序，然后重试",
               );
             })
           }

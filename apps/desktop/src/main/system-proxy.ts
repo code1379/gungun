@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import { readMacNetworkServices } from "./network-services";
+import { registerMacProxyService } from "./macos-registration";
 import type { Chain, ProxyNode } from "@gungun/domain";
 import type { ActiveProxy, LocalRuntime } from "./local-runtime";
 export interface NetworkService {
@@ -90,8 +91,8 @@ export class MacProxyAdapter implements ProxyAdapter {
     if (action === "services") return this.readServices() as Promise<T>;
     return this.call<T>("request", { ...input, action });
   }
-  authorize() {
-    return this.call("register");
+  async authorize() {
+    return registerMacProxyService(this.binary);
   }
 }
 export class ProxyController {
