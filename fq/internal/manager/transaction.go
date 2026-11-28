@@ -327,27 +327,32 @@ func (m *Manager) verify(s State) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	// Collect potentially expensive service logs only once, after readiness
-	// retries are exhausted, rather than invoking logread/journalctl every 200ms.
+	return m.withServiceLogs(s, last)
+}
+
+func (m *Manager) withServiceLogs(s State, cause error) error {
+	if cause == nil {
+		return nil
+	}
 	for _, item := range []struct {
 		name    string
 		enabled bool
 	}{{"gungun-sing-box", len(s.Services) > 0}, {"gungun-caddy", caddyRequired(s)}, {"gungun-tunnel", s.TunnelToken != ""}} {
-		if !item.enabled || !strings.Contains(last.Error(), "service "+item.name+" status check failed") {
+		if !item.enabled || !strings.Contains(cause.Error(), "service "+item.name+" status check failed") {
 			continue
 		}
 		log, logErr := m.ServiceLogs(item.name, 100)
-		details := []string{last.Error()}
+		details := []string{cause.Error()}
 		if logErr != nil {
 			details = append(details, "service log read failed: "+logErr.Error())
 		} else if text := strings.TrimSpace(string(log)); text != "" {
-			details = append(details, "recent service logs:\n"+text)
+			details = append(details, "recent service logs:\\n"+text)
 		} else {
 			details = append(details, "service log is empty")
 		}
-		last = errors.New(strings.Join(details, "\n"))
+		return errors.New(strings.Join(details, "\\n"))
 	}
-	return last
+	return cause
 }
 func checkTunnelReady(client *http.Client, endpoint string) error {
 	response, err := client.Get(endpoint)
